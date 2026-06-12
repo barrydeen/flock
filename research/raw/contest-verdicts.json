@@ -1,0 +1,116 @@
+{
+  "winner": "A",
+  "winnerName": "Federated-Ark over Nostr",
+  "tally": {
+    "A": 2,
+    "C": 1
+  },
+  "judges": [
+    {
+      "lens": "crypto-soundness",
+      "winner": "A",
+      "totals": {
+        "A": 38,
+        "B": 36,
+        "C": 30
+      },
+      "rationale": "A's trust claims survive adversarial walking: I tried to break the arkoor contest (stale sender exit vs receiver keyspend inside the 144-CSV window) and it resolves trustlessly to the rightful owner; exits are fully pre-signed, quantified to the vB, and need no operator. Its nonce/session discipline over lossy relays is best-in-class, and it alone flags FROST-inside-MuSig2 as unproven. B is a close, sound second — receiver-online claim makes its key-tweak math actually work, and locktime ordering is consensus-enforced — but suffers 4-week exit maturity, change-desk dependence per payment, and a 36-block stale-race under mass exit. C's core mechanisms break: the send-time share-tweak to an offline receiver's independent key is cryptographically impossible (no party knows the scalar u_k−u_{k+1}), and the federation alone can steal any transferred leaf via stale-exit + public forfeit that pays the federation. Exit data also load-bears on Blossom HTTP, violating R2."
+    },
+    {
+      "lens": "economics-ux",
+      "winner": "C",
+      "totals": {
+        "A": 35,
+        "B": 34,
+        "C": 35
+      },
+      "rationale": "Economics/UX lens. A is the most trust-minimized but its two-sided economics are adoption-fatal: refresh fees pass through operator cost-of-capital on the user's whole balance (~0.4%/mo, ~5%/yr carrying cost), idle wallets get force-exited on-chain at the user's expense after ~25 days, and operators tie up 10 BTC per 10k users to earn roughly their cost of capital. B has the best consumer-money properties (seed-only consensus recovery, zero-cost dormancy, simplest receiver path) but amortizes nothing on-chain — one permanent UTXO per coin is Lightning-parity footprint, not a successor. C engineers the economics deliberately: payments don't consume operator capital (~10% float), user carrying cost near zero, healthy operator margin, LSP-pivot migration, offline receive including offline LN invoices. A and C tie on points; under a fees-and-business-model lens C wins the tiebreak. A normal user would plausibly pick C over an LSP; only C and B beat Cashu's hold-for-free property."
+    },
+    {
+      "lens": "decentralization",
+      "winner": "A",
+      "totals": {
+        "A": 37,
+        "B": 34,
+        "C": 34
+      },
+      "rationale": "Lens: decentralization/censorship resistance. A has the hardest trust floor: checkpointed funds are theft-proof even under full quorum collusion (the user co-signed and key-deleted their own path), so capture degrades to censorship, and censorship degrades to a safe unilateral exit; a dead quorum cannot even sweep. Cross-pool vHTLC federation gives a mesh-of-small-federations answer to LN's hub convergence; towers are permissionless and defenses pay users directly, not the operator. B behaves best under quorum death (consensus-ordered locktimes, true seed-only recovery leaf, dormancy degrades to plain self-custody) but per-coin UTXO scaling breaks the successor mandate, and a 4-week premeditated-retention theft window remains. C is the most capital-efficient (lowest operator entry barrier) but its stale-exit defense is a mempool race whose remedy pays the federation — uncleansed receivers lose operator-independent exit precisely when the quorum fails. A's residual costs: capital-concentration pressure, DA-dependent seed recovery."
+    }
+  ],
+  "winnerFlaws": [
+    {
+      "design": "A",
+      "flaw": "Every signature in the system depends on a FROST group acting as one MuSig2 cosigner (threshold generation of MuSig2's two-point nonces and binding-factor partials). No proven, shipped construction exists; FROSTR/bifrost only does plain Schnorr over Nostr. The design flags it with an audit gate, but if the composition leaks nonces or keys, the whole pool is compromised. Related: the hash-locked forfeit/new-leaf atomicity is asserted, not specified at script level."
+    },
+    {
+      "design": "A",
+      "flaw": "Structural Ark carrying cost: operators front full vTXO value for 30-day expiries, so users pay ~0.4%/month (~5%/yr) on their entire balance just to hold, and any wallet idle >~25 days is force-exited on-chain (4.5k-22k sats) at the user's expense. Combined with operator revenue (~0.4-0.5%/mo) barely covering the stated 5% APY cost of 10 BTC/10k-user float, both sides of the market are unviable versus Cashu or LSP-Lightning for normal users."
+    },
+    {
+      "design": "A",
+      "flaw": "Load-bearing liveness assumption: hourly interactive MuSig2 tree ceremonies with up to ~1024 cosigners must complete two signing rounds over untrusted, lossy public relays within 30-second phase timers. Persistent ceremony failure (relay drops/latency at scale) cascades users into trust-downgraded delegated refreshes or forced on-chain exits — the protocol's safety degrades through its own retry path."
+    }
+  ],
+  "grafts": [
+    {
+      "from": "B",
+      "idea": "Seed-only recovery leaf: a per-output script path paying the checkpointed owner after epoch_end+288 CLTV, rotated at each refresh — gives A full recovery with zero stored data even if all relays purge the vault and all operators die."
+    },
+    {
+      "from": "B",
+      "idea": "Consensus-enforced staleness ordering via decrementing absolute locktimes on pre-signed exit txs — layering this onto A's arkoor chains would make stale-exit defense proactive-by-consensus instead of depending on someone broadcasting within the 144-block CSV contest window."
+    },
+    {
+      "from": "B",
+      "idea": "Per-operator signed deletion attestations and epoch heartbeat events (kind 31401): cheap public accountability making share retention provable fraud after the fact."
+    },
+    {
+      "from": "C",
+      "idea": "Merkle-rooted leaf-ownership state commitments with strictly increasing sequence numbers (kind 30178): compact inclusion proofs for receivers and portable equivocation fraud proofs, stronger than A's flat per-vTXO sequence log."
+    },
+    {
+      "from": "C",
+      "idea": "Watchtower 'broadcast-exit-at-height-H unless superseded' pre-deposits — closes A's gap where a never-yet-online arkoor receiver has no watch request filed before T_exp."
+    },
+    {
+      "from": "C",
+      "idea": "Wallet-enforced value-at-risk cap with automatic checkpoint participation above a threshold (default ~50k sats) — turns A's 'uncheckpointed balance displayed distinctly' into a bounded-exposure policy."
+    },
+    {
+      "from": "B",
+      "idea": "Consensus-level recovery tapleaf: rotate a CLTV-gated recovery leaf to the current owner at each checkpoint so full recovery from seed alone works even if relays, Blossom, and all operators vanish — eliminates C's data-availability doomsday and is the single best consumer-trust property in any design."
+    },
+    {
+      "from": "B",
+      "idea": "Decrementing absolute-locktime staleness ordering on exit txs, making stale exits consensus-invalid until the rightful owner's matures. This replaces C's 72-block forfeit race (and its forfeit-pays-Fed IOU gap) with 'act before a known deadline' — no mempool race, no watchtower-dependence for ordering."
+    },
+    {
+      "from": "B",
+      "idea": "Zero-cost dormancy: untransferred/unmoved value skips rollover entirely — no carrying fee, no liveness requirement, no forced exit for idle users. Grafting an idle-leaf path (long-lived ladder rungs + recovery tapleaf) into C removes the 'open the app monthly or get force-exited' one-star-review generator."
+    },
+    {
+      "from": "B",
+      "idea": "Recovery-leaf script path (rotating <owner> CHECKSIG + CLTV fallback): gives true seed-only recovery with zero data-availability assumptions and means dormant funds degrade to plain self-custody instead of being swept at T_exp. A's seed recovery currently fails if all 8 relays AND 5 operators withhold vault ciphertext, and dormant tower-less users are confiscated by the expiry sweep."
+    },
+    {
+      "from": "B",
+      "idea": "Decrementing absolute-locktime ordering on successive exit/claim packages, so the rightful current owner's exit is consensus-valid strictly before any stale one — replaces A's 144-CSV reactive contest (which needs a watchtower or receiver awake within 24h) with deadline-based, race-free defense."
+    },
+    {
+      "from": "B",
+      "idea": "Per-operator signed deletion attestations published per epoch (kind 31401): cheap public accountability that converts share/key retention into provable fraud after the fact — directly applicable to A's ephemeral tree-signing keys and FROST share refreshes."
+    },
+    {
+      "from": "C",
+      "idea": "Receiver-side replication-verified finality: don't display a received payment as final until the transfer package is confirmed replicated on >=k independent relays/mirrors. Detects relay withholding at receive time instead of at recovery time."
+    },
+    {
+      "from": "C",
+      "idea": "Watchtower height-deposits ('broadcast this pre-signed exit at height H unless superseded'): makes offline-past-deadline safety automatic and fee-budgeted rather than dependent on towers noticing missed-heartbeat alerts in A's thin watch-request market."
+    },
+    {
+      "from": "C",
+      "idea": "LSP migration framing plus offline BOLT11 receive via federation-held preimage shards (Spark-precedented): strengthens A's R1/R8 story — existing Lightning LSPs pivot to pool operators with the same capital and no per-edge lockup, and npubs can receive native Lightning invoices while offline."
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+[
+  {
+    "file": "/home/barry/dev/flock/specs/ceremonies.md",
+    "location": "§4.1 step 4, line 397",
+    "severity": "major",
+    "issue": "Q's normative arkoor-cosign validation list says \"Q also verifies: the per-vTXO seq strictly increments\". No per-vTXO sequence exists in v0.3: per ERRATA/A6/A7 and event-kinds §3.10, seq is the global per-cosign-batch transfer-log sequence, and the nullifier is outpoint-only. \"Per-vTXO seq\" is a surviving v0.2 artifact of the H(outpoint‖seq) design and contradicts the companion spec.",
+    "suggestion": "Replace with \"the transfer-log seq strictly increments (one root per cosign batch, §3.10 of event-kinds.md)\" or delete the clause, since the nullifier-absence check already covers double-cosign detection.",
+    "lens": "consistency"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§5.5, line 209 (end of first bullet)",
+    "severity": "minor",
+    "issue": "Says \"because the v0.3 review showed the v0.2 claim 'Q must unroll to sweep' was simply false\". The review was of the v0.2 drafts (research/raw/review-v0.2-findings.json); the whitepaper itself elsewhere calls it \"the v0.2 review\" (§8.3 table, lines 375–380) and \"a 51-finding verification review of the v0.2 drafts\".",
+    "suggestion": "Change \"the v0.3 review\" to \"the v0.2 review\" for consistency with §8.3 and the artifact name.",
+    "lens": "consistency"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§10 comparison table, lines 409–417",
+    "severity": "minor",
+    "issue": "The summary table drifts from the normative table in analysis/comparison.md §1: \"Infra dependency: Public Nostr relays only\" omits the tower market and operator archival relays that A2/A8 made load-bearing (comparison.md says \"Nostr relays (incl. operator archival) + tower market\"); the \"Operator trust\" cell (\"4-of-7 theft; uncheckpointed window only\") omits the A3 sender-alone-vs-offline-receiver clause that comparison.md's cell includes.",
+    "suggestion": "Align the two cells with comparison.md §1: add \"(incl. operator archival) + tower market\" to Infra dependency and the sender-alone caveat to Operator trust.",
+    "lens": "consistency"
+  },
+  {
+    "file": "/home/barry/dev/flock/analysis/economics.md",
+    "location": "§1.3 worked-example table, line 35",
+    "severity": "minor",
+    "issue": "Labels \"0.8%/mo\" as \"(top of band)\". The posted band is 0.5–0.9%/month, so the top is 0.9%; 0.8% is the break-even per §1.2 and ERRATA. Whitepaper §9 explicitly computes the top of band as 0.9% (\"0.9% × 10 BTC = 0.09\"), so the label is internally and cross-document inconsistent.",
+    "suggestion": "Relabel as \"0.8%/mo (≈break-even, near top of band)\" or recompute the row at 0.9% and adjust the reconciliation text.",
+    "lens": "consistency"
+  },
+  {
+    "file": "/home/barry/dev/flock/analysis/economics.md",
+    "location": "§1.3 vs whitepaper §9 (line 397)",
+    "severity": "minor",
+    "issue": "Same headline example (10k users, 100k-sat average) is modeled with different assumptions: whitepaper §9 assumes all 10 BTC hot (float ≈19 BTC, revenue \"0.2–0.3 BTC/month\" counting 0.15 BTC pinning) while economics §1.3 assumes 5 BTC hot (float ≈10 BTC, margin \"+1.2–1.7M sats/month split seven ways\", pinning unmodeled). Both are self-consistent, but a reader gets two materially different viability pictures with no cross-reference to the divergent assumptions.",
+    "suggestion": "Pick one hot-fraction assumption (or have whitepaper §9 explicitly note economics.md's 50%-hot variant and the pinning-revenue treatment difference) so the two reconciliations visibly agree.",
+    "lens": "consistency"
+  },
+  {
+    "file": "/home/barry/dev/flock/specs/ceremonies.md",
+    "location": "§4.1 heading, line 371",
+    "severity": "minor",
+    "issue": "Heading states \"(Alice → Bob, ~1–2 s)\" without the A19-mandated qualifier. Amendment A19 requires marking the 1–2 s arkoor latency as a \"target pending measurement over relay+Tor paths\"; whitepaper (§1.3, §4.3, §7.1) and comparison.md carry the qualifier, ceremonies.md does not.",
+    "suggestion": "Change to \"~1–2 s target, pending measurement over relay+Tor paths\" to match the other documents.",
+    "lens": "consistency"
+  },
+  {
+    "file": "specs/event-kinds.md (also specs/ceremonies.md §3.4, whitepaper.md §7.3)",
+    "location": "§3.4 kind 24400, bond instrument",
+    "severity": "major",
+    "issue": "The A12 intent bond is a pre-signed tx spending a 1,000-sat 'bond vTXO', but the protocol's own minimum leaf denomination is 10,000 sats and sub-floor value 'cannot occupy its own leaf' (onchain §2.5, economics §3) — a 1,000-sat bond vTXO cannot exist as specified. 'Immediately broadcastable' is also wrong on L1: the bond tx spends a leaf whose prevout exists only after an unroll, so collecting 1k sats costs Q ~1.6 kvB (~16k sats @10 sat/vB). No doc reconciles either point.",
+    "suggestion": "Explicitly exempt bond vTXOs from the 10k floor (or make the bond a sub-output of a normal leaf with change), and specify the collection path — e.g., Q holds the signed bond tx as a lien valid on any future unroll and/or nets the bond at the next cosign/refresh — rather than claiming immediate broadcastability.",
+    "lens": "soundness"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§9 Economics summary vs analysis/economics.md §1.3",
+    "severity": "major",
+    "issue": "The A5 stack-margin reconciliation diverges materially between the two docs for the same canonical 10k-user/100k-sat pool: whitepaper treats all 10 BTC as hot and counts pinning at full adoption (0.15 BTC/mo) as a hard line, concluding ~0.2–0.3 BTC/mo revenue vs ~0.08 cost (≈3.5× covered); economics models 50% hot, marks pinning/gateway 'unmodeled', and concludes a thin +1.2–1.7M sats/mo margin with the headline product 'sold at or below cost'.",
+    "suggestion": "Align the two worked examples (same hot fraction, same turnover, same treatment of pinning adoption), or have §9 explicitly state it assumes full pinning adoption and 100% hot balances and cite economics §1.3 as the conservative case.",
+    "lens": "soundness"
+  },
+  {
+    "file": "specs/onchain.md",
+    "location": "§2 Output templates, notation paragraph (line ~170)",
+    "severity": "minor",
+    "issue": "States 'all of a round's cell txs confirm in the same window, so the round's cells share an effective T_exp', contradicting event-kinds §3.9, which mandates per-cell t_exp precisely because 'a rebuilt cell may confirm at a different height than its siblings... these fields are per-cell, never round-wide'. A leftover round-level simplification from the pre-A1 single-round-tx model.",
+    "suggestion": "Replace with: T_exp is strictly per cell (cell-tx height + 4320); sibling cells usually confirm within a few blocks but a rebuilt cell may differ, per event-kinds §3.9.",
+    "lens": "soundness"
+  },
+  {
+    "file": "analysis/attacks.md (also specs/ceremonies.md §5, whitepaper.md §5.4)",
+    "location": "T5 residual 2 and §6 residual-trust bounds",
+    "severity": "minor",
+    "issue": "The '144–720 blocks depending on which hop attacks' response window is applied uniformly to both defense cases, but the 144 floor exists only in the forfeit case (a refresh-stale hop-4 attacker, nSeq 144, onchain §3.4). In the uncheckpointed-chain stale-owner case (T5/A3) the attacker is a prior owner at hop ≤3, so the earliest a stale claim matures is 288 blocks after unroll — the stated 144 lower bound corresponds to no ladder attack.",
+    "suggestion": "Scope the bounds: 288–720 blocks for stale-owner ladder attacks on uncheckpointed chains; 144–720 for forfeit defense of refresh-stale leaves. Conservative as written, but the conflation muddies the tower-response requirement.",
+    "lens": "soundness"
+  },
+  {
+    "file": "analysis/economics.md",
+    "location": "§1.1 vs analysis/attacks.md G4",
+    "severity": "minor",
+    "issue": "Churn-attack leverage figures disagree with each other and with their own arithmetic: economics §1.1 says hourly refresh strands '~1,390 tranches' (58 days × 24, correct) but calls this 'capital leverage in the hundreds'; attacks G4 says 'order 100–250× leverage' for the same hourly-refresh attack under the same 58-day lock, where refreshes-in-the-lock-window is ~1,392.",
+    "suggestion": "Use one figure: ~1,390× theoretical leverage for unthrottled hourly refresh, reduced to whatever the minimum-dwell-time and per-leaf rate limits actually permit (state that derived bound in G4).",
+    "lens": "soundness"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.5, first bullet (line 209)",
+    "severity": "minor",
+    "issue": "Refers to 'the v0.3 review showed the v0.2 claim ... was simply false', while every other reference (§4.2, §8.3, attacks.md preamble, economics §2.3) calls the same 51-finding event 'the v0.2 review' or 'the verification review of the v0.2 drafts'. Inconsistent provenance labeling for the normative review artifact.",
+    "suggestion": "Change to 'the v0.2 review' (or 'the 51-finding review of the v0.2 drafts') to match all other references.",
+    "lens": "soundness"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§5.5, §9, §10 comparison table",
+    "severity": "major",
+    "issue": "Dormancy language contradicts its own mechanism. §5.5 says a non-refreshing user 'is not force-exited' and 'pays nothing'; §9 says dormant balances 'pay ≈0... no forced exit'; the §10 table says 'Idle-funds cost ≈0'. But the mechanism IS a forced on-chain exit: standing tower deposits broadcast unroll+recovery claim at T_exp+288 (~32 days after last checkpoint), paying on-chain fees (~3.1k–16k sats at 10 sat/vB, 5x at 50) plus the ~2,000-sat tower fee from the user's funds — underwater for a 10k-sat minimum leaf. The text claims this answers the economics judge whose objection explicitly included 'force-exiting them'.",
+    "suggestion": "Reword to: dormant funds pay no carrying fees but are automatically exited to on-chain self-custody ~32 days after the last checkpoint at the owner's on-chain expense (quantify). Change 'not force-exited' to 'not confiscated'. Update §9 and the §10 'Idle-funds cost' cell accordingly, and reconcile the Cashu comparison in §3.3.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§9 (float arithmetic), §11 problem 7",
+    "severity": "major",
+    "issue": "The float-to-hot ratio ≈1.9 assumes one refresh per 30-day expiry, but the protocol's own rules preclude that for active balances: the wallet refresh deadline is T_exp−1008 (~23 days), the 2016-block receive ban makes leaves unspendable after ~16 days, and §9's own 10x-monthly-turnover assumption forces hop-4/VaR checkpoints far more often — each refresh spawning a fresh 58-day capital lock. At 16–23-day cycles the ratio is 2.5–3.6 and break-even (1.05–1.5%/mo) exceeds the entire 0.5–0.9% band; alternatively, if fees are per-refresh, the '%/month' user-cost headline understates active users' cost.",
+    "suggestion": "State float as a function of refresh cadence (ratio = 58d/cycle), use a cadence consistent with the deadline, receive ban, and the 10x turnover assumed for arkoor revenue, and recompute break-even. Clarify whether 0.5–0.9% is per month pro-rata or per refresh, and what a hop-4-velocity merchant actually pays monthly.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§5.4 (also §6.2 property 2, §8.2 offline-safety row)",
+    "severity": "major",
+    "issue": "The ladder scoping is internally inconsistent. §5.4 says the head start is '144 blocks per hop' with a 4-hop cap — maximum differential 576 blocks — yet the same paragraph says towers must act 'within the 144–720-block differential'. 720 only exists in the forfeit-vs-stale window (nSequence-0 forfeit vs hop-0 claim, §5.3/§11.9). For ladder attacks the differential is 144–576 and the sleeping defender's real deadline (attacker claim maturity) is 288–720. §6.2 and §8.2 repeat the conflated '144–720' figure for the tower deadline.",
+    "suggestion": "Define the two windows separately: (a) forfeit stale window = stale claim's nSequence, 144–720; (b) ladder defense deadline = attacking prior owner's claim maturity, 288–720 (differential 144–576). Use the correct range at each citation site (§5.4, §6.2, §8.2).",
+    "lens": "cold-read"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§4.3 (round capacity) vs §7.2 step 6 / §8.2",
+    "severity": "minor",
+    "issue": "§4.3 says that when auto-checkpoint demand (explicitly including 'VaR-cap crossings plus hop-4 resets') exceeds 1,024 leaves/hour, 'refreshes queue to later rounds — a throughput ceiling, not a safety failure, since refresh deadlines are measured in weeks.' But VaR auto-checkpointing exists precisely to shrink the above-cap exposure window 'at the next hourly round' (§7.2, §8.2); queueing extends above-cap residual-trust exposure for hours, so the 'not a safety failure' framing is misleading for that demand source.",
+    "suggestion": "Acknowledge that checkpoint-queue congestion proportionally extends the above-cap exposure window, and either prioritize VaR-triggered refreshes in queue ordering or restate the VaR bound as 'next available round seat' rather than 'next hourly round'.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§7.2 step 6, §8.2 table row 1",
+    "severity": "minor",
+    "issue": "The VaR cap's aggregation semantics are undefined: §7.2 says 'if the value exceeds the value-at-risk cap' (per receipt?) while §8.2 says auto-checkpoint 'above the 50,000-sat VaR cap' (aggregate balance?). The separately defined quorum-side uncheckpointed_ceiling is explicitly a 'per-recipient uncheckpointed total', implying the wallet cap may be per receipt — in which case an attacker (or ordinary flow) can structure many sub-cap receipts and the 'eclipse prize is capped' argument (§8.4) weakens.",
+    "suggestion": "State explicitly that the cap applies to the aggregate uncheckpointed balance, not per receipt, and that any accepted receipt pushing the aggregate over 50k sats triggers auto-checkpoint.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§10 comparison table, 'Operator trust' row",
+    "severity": "minor",
+    "issue": "The table says Flock operator trust is '4-of-7 theft; uncheckpointed window only', but §8.1 concedes a quorum power over checkpointed funds: the root sweep at T_exp+4032 confiscates dormant balances if the owner and all ≥3 deposit towers fail to act in the 3,744-block window. 'Uncheckpointed window only' overstates relative to the paper's own honest accounting elsewhere.",
+    "suggestion": "Amend the cell to something like '4-of-7 theft in uncheckpointed window; sweep-confiscation of dormant funds only if owner and all towers absent ~26 days past recovery maturity'.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "/home/barry/dev/flock/whitepaper.md",
+    "location": "§4.1 (watchtowers), §5.5, §5.6, §7.1 step 5",
+    "severity": "minor",
+    "issue": "Tower compensation is never reconciled with tower outlay. Pre-signed CPFP children are deliberately minimum-feerate (§5.6), so an acting tower must fee-bump via P2A out of pocket; a dormant user's first-exit unroll is ~1.6 kvB (~16k sats at 10 sat/vB, ~80k at 50), against a contingent fee of ~2,000 sats. Since the dormancy guarantee and offline stale-unroll defense now rest on towers acting (§11.10), a structurally loss-making action is a real gap beyond generic 'market thinness'.",
+    "suggestion": "Size the contingent fee against expected bump cost (e.g., fee output as a percentage or feerate-indexed), or specify that the user's dedicated fee UTXOs pre-fund bumps to a stated feerate ceiling, and state the residual when feerates exceed it.",
+    "lens": "cold-read"
+  }
+]

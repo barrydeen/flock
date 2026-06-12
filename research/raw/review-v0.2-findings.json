@@ -1,0 +1,410 @@
+[
+  {
+    "file": "whitepaper.md",
+    "location": "§5.5 — \"anyone can unroll the tree (Q must unroll to sweep; towers unroll for bounties)\"",
+    "severity": "critical",
+    "issue": "\"Q must unroll to sweep\" is false per specs/onchain.md §3.5: cell roots carry the N2 sweep leaf, so Q sweeps a never-unrolled cell at its root in one input at T_exp+4032. The dormancy/seed-only-recovery guarantee (\"never confiscation\") therefore depends on a third party unrolling within the 3,744-block window, with no specified actor or bounty-funding mechanism. The false claim recurs in whitepaper §7.5, ceremonies.md §6, and economics.md §2.3; onchain.md concedes the opposite.",
+    "suggestion": "Either remove N2 from the cell-root output template (forcing unroll before sweep) or rewrite all dormancy/recovery claims to state the unroll dependency explicitly and specify who performs and funds unrolls for dormant users (bounty mechanism, tower duty).",
+    "lens": "requirements"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§8.2 Residual-trust time bounds — \"Offline safety: None until T_exp − 720\" / \"theft requires sender + 4-of-7\"",
+    "severity": "critical",
+    "issue": "A prior hop owner acting alone (no operator collusion) can unroll the leaf early and broadcast their stale Q-cosigned claim, maturing in 288–720 blocks (~2–5 days). A receiver offline longer than that is robbed unless someone broadcasts the conflicting arkoor chain — no actor is assigned this duty (towers auto-broadcast forfeits only). The cited mitigation, the 38404 height-deposit, is height-triggered near T_exp−720 and cannot react to early unrolls; worse, the attacker (the sender) files it, so \"mandatory\" is unenforceable for never-online receivers. attacks.md T5 residual 2 admits the vector but wrongly claims L3 covers it.",
+    "suggestion": "Specify reactive tower behavior (broadcast held arkoor chains/claims on detecting a stale unroll, as for forfeits), allow event-triggered deposits, and restate the uncheckpointed bound as \"sender alone, if receiver offline beyond the ladder differential after a hostile unroll.\"",
+    "lens": "requirements"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§4.1 step 9 — \"collects signed write receipts ... send is not complete until the receipts verify\"",
+    "severity": "major",
+    "issue": "Contradicts event-kinds.md §1.5, which states NIP-01 OK responses prove nothing, defines replication verification as local read-back, and makes relay-signed proof-of-write receipts an optional non-standard feature with format [TBD]. Send completion and the L11 \"denial attributable\" mitigation thus depend on a relay extension that does not exist — also in tension with R2, since pool relays must run unspecified non-standard software for a load-bearing finality check.",
+    "suggestion": "Align ceremonies §4.1 step 9 to read-back verification per event-kinds §1.5, and downgrade signed receipts everywhere to SHOULD/defense-in-depth — or specify the receipt format normatively instead of [TBD].",
+    "lens": "requirements"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§3.1 INTENT — \"bonded intent fee (bond amount [TBD])\"",
+    "severity": "major",
+    "issue": "The forfeitable intent bond is the named mitigation for G1/G2 griefing, but no document specifies the instrument: how it is posted, custodied, slashed, or returned. event-kinds 24400 defers to ceremonies.md (\"pre-signed bond instrument, see ceremonies.md\"); ceremonies never defines it. OP6 concedes on-chain bonds need trusted arbitration, yet unilateral slashing by Q is asserted. Q's power to slash arbitrarily is also an un-enumerated residual-trust exposure with no bound in §6/attacks §6.",
+    "suggestion": "Specify the bond instrument (e.g., a pre-signed transaction or fee debit against the refreshed vTXO), its return path on honest abort, and add bond exposure to the residual-trust tables.",
+    "lens": "requirements"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§6 Recovery — \"request Q's archive — operators serve ciphertext\"",
+    "severity": "major",
+    "issue": "The quorum ciphertext archive is load-bearing in three flows (vault recovery fallback, gift-wrap fetch fallback, and one of OP2's data-availability bounds), but no transport, event kind, request/response protocol, authentication, or retention obligation is specified anywhere. As written it is an operator-hosted endpoint outside the Nostr event surface — exactly what R2 forbids from being load-bearing.",
+    "suggestion": "Define an archive request/response event-kind pair (gift-wrapped to Q over pool relays) with retention requirements in event-kinds.md, or explicitly demote the archive to non-normative convenience and remove it from the OP2 bounds list.",
+    "lens": "requirements"
+  },
+  {
+    "file": "specs/event-kinds.md",
+    "location": "§3.11 — \"Addressing and discovery (honest trade-off)\"",
+    "severity": "major",
+    "issue": "R7 promises receiving \"the very first payment they ever receive\" with \"zero prior footprint,\" but wraps reliably land only on the sender's pool relays; a brand-new npub has no kind-10002 read relays and no specified way to learn which pool's relay set to scan for pool-tagged 1059s — discovery is unspecified and scales poorly with pool count. Additionally onchain.md §1.4 sources B from an undefined \"payment-target entry\" that appears in no kind table.",
+    "suggestion": "Specify first-contact discovery normatively (e.g., crawl 38400 pool ads from the bootstrap set and scan each pool relay set), and define the payment-target entry kind carrying the receiver's key and preferred relays/pools.",
+    "lens": "requirements"
+  },
+  {
+    "file": "specs/onchain.md",
+    "location": "§1.1 Master seed and derivation",
+    "severity": "major",
+    "issue": "Seed-only recovery requires a script-path spend of the recovery leaf, which needs the control block — hence the sibling tapleaf hashes, including the cooperative leaf's owner key U and T_exp. The derivation table omits the leaf cooperative key U entirely, all paths are [TBD], and the worst-case scenario (vault, relays, and archives all gone) gives no procedure to rediscover pool_id/Q, round txids, or leaf positions. Without re-derivable U and a specified chain-scan procedure, the headline \"recoverable from the seed alone\" claim is not end-to-end satisfiable.",
+    "suggestion": "Add the leaf cooperative key to the seed-derivation table and specify the full seed-only scan: enumerate pools/rounds, recompute candidate scriptPubKeys from on-chain round transactions, and rebuild control blocks from seed plus chain data only.",
+    "lens": "requirements"
+  },
+  {
+    "file": "analysis/economics.md",
+    "location": "§1.2 Cost lines / §1.3 Worked example",
+    "severity": "major",
+    "issue": "§1.2 says fronted capital is recovered \"when the prior round expires and its forfeited leaves are swept,\" but sweeps are valid only at T_exp+4032 (~28 days after expiry), so float turns over in ~58 days, not the modeled \"~30-day expiry window\" — roughly doubling the dominant cost line (break-even ≈0.8%/mo at 5% APY, not 0.42%) unless Q pays full-tree unroll fees to collect forfeits earlier. The worked example also charges capital cost on only the hot 5 BTC, though dormant leaves equally occupy fronted float until sweep.",
+    "suggestion": "Model capital lock as expiry plus sweep delay (or the unroll-fee alternative), include dormant balances in the float, and re-derive the break-even refresh fee, the ~10 BTC float figure, and the 0.3–0.4%/month structural-cost claim.",
+    "lens": "requirements"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§4.2 — \"compact block filters and/or multiple independent explorers\"",
+    "severity": "minor",
+    "issue": "The \"and/or\" permits block explorers — HTTP services — to be the sole L1 view in safety-critical confirmation checks (round finality, arkoor chain verification, refresh finality). That is a smuggled HTTP dependency relative to R2/R5's stated posture; compact filters or a full node are the trust-minimized options the design otherwise leans on.",
+    "suggestion": "Require compact filters or a full node as the baseline L1 view, with explorers permitted only as additional cross-checks, never the sole source for fail-closed decisions.",
+    "lens": "requirements"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§5 Watchtower protocol",
+    "severity": "minor",
+    "issue": "Three tower mechanisms load-bearing for offline protection (R3) are unspecified: the depositor↔tower fee-budget settlement ([TBD]), the tower discovery/advertisement kind (event-kinds.md: \"[TBD] — not in the canonical table\"), and the funding/claiming mechanism for the unroll bounties that recovery and dormancy claims rely on.",
+    "suggestion": "Specify a tower advertisement kind (38406-style offer book) and a settlement flow, and define how unroll bounties are funded, advertised, and claimed.",
+    "lens": "requirements"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§5 Watchtower protocol — height-deposits (38404)",
+    "severity": "critical",
+    "issue": "Height-deposits are height-triggered only ('broadcast P at height H', trigger_height ≤ T_exp−720; event-kinds 3.13 confirms). But attacks.md T5 residual (2) and whitepaper §8.2 ('offline safety: none required until T_exp−720') rely on deposits defending a sleeping uncheckpointed receiver against a prior hop who unrolls early and waits out their ladder nSequence (e.g., 288 blocks ≈ 2 days). As specified, the tower does nothing until H; a lone prior owner — no quorum collusion — can steal sub-VaR receipts from any receiver offline ~2+ days.",
+    "suggestion": "Add a conflict trigger to 38404 and §5: towers MUST monitor L1 for any unroll/spend touching the deposited package's ancestor chain and immediately broadcast the package (chain txs + claim) on detection, not only at trigger_height. Re-scope the offline-safety claims accordingly.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "specs/onchain.md",
+    "location": "§5.3 Mass exit — 'CPFP children (batch-bumped by towers/Q) ⇒ ≈ 310 vB/user amortized'",
+    "severity": "major",
+    "issue": "Batch-bumping is impossible under the design's own relay rules: ephemeral-dust anchors must be spent in the same package, and TRUC forbids a child with more than one unconfirmed parent (crypto-toolbox digest: 'no chains beyond 1p1c'). So all 1,360 parents (336 node txs + 1,024 claims) each need their own ≈115 vB child: +156 kvB ⇒ ≈451 vB/user, ≈0.46 blocks/round (~45 blocks for 100k users), not 310 vB / 0.33 blocks. Whitepaper §5.6 repeats the figure.",
+    "suggestion": "Recompute with one child per TRUC parent (≈451 vB/user, ≈0.46 blocks per pool round). Since the ~310 vB figure comes from the synthesis, add an ERRATA entry correcting the canonical exit-cost constant; the first-exiter math (which honestly counts 4 children) is fine.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§3 'a misbehaving participant delays one cell by one attempt, never the round'",
+    "severity": "major",
+    "issue": "Cell isolation conflicts with txid commitment. All 16 cells share one round tx; node txs spend (round_txid, vout), forfeits embed the connector outpoint, and boarding sigs commit to all outputs (SIGHASH_DEFAULT). Rebuilding any cell (post-nonce exclusion or partial-phase aborter) changes the round tx's output set, hence its txid, invalidating every other cell's pre-signed node txs, forfeits, and step-P connector/txid verifications — forcing a round-wide re-sign with fresh nonces, not a one-cell rebuild. Step P also has wallets verify a 'round txid' before any cell's set is final.",
+    "suggestion": "Specify the sequencing: freeze the round txid only after all 16 cells' SET-FINAL; have wallets re-verify connector outpoints/txid then; state that partial-phase exclusions reset signing for all cells (one sub-attempt globally). Or fund cells via per-cell transactions to make isolation real.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "specs/onchain.md",
+    "location": "§3.4 Forfeit transactions — 'Broadcast: Anyone, any time both prevouts exist on-chain (i.e., the round tx confirmed and someone unrolled the old leaf)' / 'confirm immediately upon a stale unroll'",
+    "severity": "major",
+    "issue": "Wrong for the common case. Checkpointing arkoor-received value forfeits the chain-tip output, whose prevout exists only after up to 4 intermediate arkoor txs confirm serially (TRUC 1p1c forbids chained broadcast). Unrolling the leaf alone never makes it exist. The defender must possess the full arkoor chain, yet §3.4 and ceremonies §5 say towers hold only 'forfeit copies'. The response window is also attacker-dependent (144 blocks only if the staler broadcasts the chain; up to 720 against a hop-0 staler).",
+    "suggestion": "Require forfeit copies distributed to towers to include the full ancestor arkoor chain (and its pre-signed CPFP children), state the serialized-confirmation requirement, and restate the residual window as 144–720 blocks depending on which stale owner attacks.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "specs/onchain.md",
+    "location": "§3.1 Round transaction table — 'Fees: Paid by Q at market rate; RBF/CPFP by Q as needed'",
+    "severity": "major",
+    "issue": "RBF of the round tx is unusable and self-destructive: any input/output change (even shrinking Q's change for fees) changes the txid, voiding every collected forfeit, every pre-signed node tx (they spend cell-root outpoints), and every in-ceremony boarding signature (SIGHASH_DEFAULT commits to all outputs). This contradicts §3's own principle that 'the whole pre-signing choreography leans on' txid fixity. An implementer following this row bricks the round and strands Q's tree capital until T_exp+4032.",
+    "suggestion": "Make fee-bumping CPFP-only post-ceremony (spend Q change or a connector output); remove 'RBF' or qualify it as 'only by re-running forfeit and boarding signing under a new proposal'.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§3.2 Step N / §3.4 — 'After CONFIRMED, the wallet MUST delete its ephemeral path key'",
+    "severity": "major",
+    "issue": "Contradicts onchain.md §1.3, which requires ephemeral keys 'deleted immediately after the user's partial signatures are emitted, before the round transaction is broadcast' (and onchain §4: 'After signing: delete ephemeral keys'). The synthesis (normative) says users cosign 'then delete the ephemeral key'. Deletion timing is the pseudo-covenant's load-bearing step; keeping keys until confirmation opens a re-sign window (compromised device + colluding Q) that the deletion assumption exists to close.",
+    "suggestion": "Align ceremonies.md with onchain.md/synthesis: delete path keys immediately after emitting partials (delete-on-use, rule N4 analogue), before broadcast; rebuilds use fresh keys anyway, so nothing is lost.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.5 'At T_exp+288 — 432 blocks (~3 days) before the quorum's earliest sweep at T_exp+4032'",
+    "severity": "major",
+    "issue": "Arithmetic error: 4032 − 288 = 3,744 blocks (~26 days), as onchain.md §3.5 and timelock invariant 3 correctly state ('3,744-block gap'). '432 blocks (~3 days)' understates the dormancy/recovery safety margin by ~10x and contradicts the normative constants.",
+    "suggestion": "Replace with '3,744 blocks (~26 days)'.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.4 'requires no live quorum, no awake receiver, and no watchtower heroics'",
+    "severity": "minor",
+    "issue": "Overstates passivity. Per attacks.md T5 residual (2) and the onchain §3.3 worked example, the current owner's priority is conditional on someone broadcasting the remaining chain txs within the stale owner's ≥144-block differential; a sleeping receiver depends on the height-deposit tower acting. 'No live quorum' is true; 'no awake receiver' is only true given a functioning tower.",
+    "suggestion": "Say 'no live quorum and no mempool race; a sleeping receiver is covered by the sender-funded height-deposit acting within the ≥144-block (~1 day) differential'.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§4.1 step 3 'Alice and Q sign over a kind-24402/24403 session'",
+    "severity": "minor",
+    "issue": "The arkoor cooperative spend is the two-sig leaf: Alice signs single-key Schnorr, Q signs FROST — there is no MuSig2 between them, so no pubnonce exchange (24402) or partial-signature (24403) semantics apply to Alice↔Q. Framing it as a MuSig2 session muddies the 'no nonce coupling' story and misuses the kinds as defined in event-kinds.md.",
+    "suggestion": "Describe it as a request/response cosign exchange (Alice's complete signature + Q's FROST signature), carried over the ceremony kinds or a dedicated envelope; reserve 24402/24403 semantics for actual MuSig2 cohort sessions.",
+    "lens": "bitcoin-validity"
+  },
+  {
+    "file": "analysis/attacks.md",
+    "location": "L2 'Refresh censorship plus watchtower suppression' and §1 Threat model",
+    "severity": "critical",
+    "issue": "L2's disposition 'confiscation is downgraded to fee taxation by construction' rests on the claim 'Q must unroll to sweep anyway' — which specs/onchain.md §3.5 contradicts: 'an untouched cell is swept at its root in one input', so a never-unrolled tree never materializes its recovery tapleaf and Q confiscates dormant checkpointed value at T_exp+4032. The threat model's 'holds against full 7-of-7 collusion for checkpointed vTXOs' inherits the same hole; onchain.md calls the unroll-before-T_exp+4032 dependency 'Conceded' but L2 never states it.",
+    "suggestion": "Delete 'Q must unroll to sweep anyway'; restate L2's residual as: confiscation prevented only if someone unrolls within the 3,744-block window (third-party/tower dependency, cross-reference OP10 or a new OP). Qualify the §1 claim: 7-of-7 safety for checkpointed vTXOs holds until T_exp+4032 absent an unroll.",
+    "lens": "attack-coverage"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.5 'At T_exp+288 — 432 blocks (~3 days) before the quorum's earliest sweep'",
+    "severity": "major",
+    "issue": "Arithmetic error: T_exp+4032 minus T_exp+288 is 3,744 blocks (~26 days), not 432 blocks (~3 days). Contradicts attacks.md L2/L6 ('3,744 blocks'), onchain.md invariant 3, and the synthesis constants (recovery T_exp+288, sweep T_exp+4032). 432 appears to be 720−288, an unrelated quantity.",
+    "suggestion": "Replace '432 blocks (~3 days)' with '3,744 blocks (~26 days)'.",
+    "lens": "attack-coverage"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.5 'not swept and not force-exited... need no tower', §7.5 step 4, §8.1 'Sweep before T_exp+4032, by which time the recovery leaf has long matured'",
+    "severity": "major",
+    "issue": "The categorical dormancy claims ('Q must unroll to sweep', 'Dormancy degrades to self-custody', idle balances 'need no tower') overstate the mechanism: per onchain.md §3.5 Q sweeps a never-unrolled cell at its root, so dormant recovery is conditional on a third-party unroll inside the 3,744-block window. This conceded dependency (onchain.md's own word) appears nowhere in §11 open problems, violating the conceded-items-must-appear rule.",
+    "suggestion": "Qualify §5.5/§7.5/§8.1: recovery requires the tree unrolled before T_exp+4032; truly dormant users depend on any party unrolling within ~26 days post-recovery-maturity. Add this residual to §11 (extend problem 9 or 10).",
+    "lens": "attack-coverage"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§8.2 'tower-dependent from T_exp − 720'",
+    "severity": "minor",
+    "issue": "Synthesis §6 and attacks.md §6 both say the never-online receiver's worst case is 'tower-dependent until T_exp − 720'; the whitepaper says 'from T_exp − 720'. The numeric bound matches but the preposition flips the meaning of when the dependency holds, in a normative residual-trust row.",
+    "suggestion": "Align with the synthesis wording ('until T_exp − 720'), or rephrase unambiguously: 'the tower must act at T_exp − 720'.",
+    "lens": "attack-coverage"
+  },
+  {
+    "file": "analysis/attacks.md",
+    "location": "§1 Threat model, 'Network position... it is conceded that no client-side defense fully defeats it (L5)'",
+    "severity": "minor",
+    "issue": "The threat model labels the network-position residual 'conceded' and cites L5, but L5's disposition header is '(b) mitigated', L5 maps to no OP in the §7 index, and the whitepaper's §11 open-problems list has no corresponding entry — inconsistent with the document's own rule that concessions cross-reference the open-problems list.",
+    "suggestion": "Either reword to 'mitigated with an ISP/state-level residual (L5)', or formally concede it and add it to the §7 index and whitepaper §11 (it is already described informally in whitepaper §8.4 family 2).",
+    "lens": "attack-coverage"
+  },
+  {
+    "file": "analysis/attacks.md",
+    "location": "§7 Open-problem index, OP1 row 'P1; residuals of P2, P3'",
+    "severity": "minor",
+    "issue": "The OP1 index row claims P3's residual contributes to OP1, but the P3 entry and its summary-table row contain no OP1 cross-reference (P2's entry does). The index→entry linkage is one-directional for P3.",
+    "suggestion": "Add '(→ OP1)' to P3's residual-risk sentence and to its summary-table disposition cell, matching how P2 references the conceded P1/OP1 surface.",
+    "lens": "attack-coverage"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§8.4 'the residual risks that remain after v0.2's mitigations cluster into four families'",
+    "severity": "minor",
+    "issue": "The four families (implementation, network-position, mempool, economic-margin) omit the two conceded critical residuals (P1 operator payment-graph surveillance, L1 data-availability stranding), the OP8 stale-recovery-key theft window, and OP9 quorum-liveness/forced-exit. A reader of §8 alone gets an incomplete residual map despite the sentence claiming to summarize all 42 findings.",
+    "suggestion": "Either scope the sentence to 'mitigated findings' and point to §11 for the conceded/structural residuals, or add a fifth/sixth family covering privacy-DA concessions and liveness.",
+    "lens": "attack-coverage"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.5 The rotating recovery tapleaf — \"At T_exp+288 — 432 blocks (~3 days) *before* the quorum's earliest sweep at T_exp+4032\"",
+    "severity": "critical",
+    "issue": "The gap between recovery-leaf maturity (T_exp+288) and the Q sweep (T_exp+4032) is 3,744 blocks (~26 days), not 432 blocks (~3 days). Contradicts onchain.md (\"3,744 blocks (~26 days)\", invariant 3), ceremonies.md §6, attacks.md L2/L6, and simple arithmetic. Misstates the dormancy safety margin by ~9x.",
+    "suggestion": "Replace \"432 blocks (~3 days)\" with \"3,744 blocks (~26 days)\".",
+    "lens": "consistency"
+  },
+  {
+    "file": "specs/onchain.md",
+    "location": "§1.3 \"deleted immediately after the user's partial signatures are emitted, before the round transaction is broadcast\" (also §3.2 \"ephemeral keys then deleted\")",
+    "severity": "major",
+    "issue": "Contradicts ceremonies.md, which twice mandates the opposite timing: Step N \"After CONFIRMED, the wallet MUST delete its ephemeral path key\" and §3.4 \"before treating the refresh as final, deleting the ephemeral path key\". The pseudo-covenant trust root rests on this deletion, so two normative specs disagree on when the load-bearing security step happens.",
+    "suggestion": "Pick one timing (immediately post-partials is the stronger covenant binding) and align ceremonies.md §3.2/§3.4 and onchain.md §1.3/§3.2 exactly.",
+    "lens": "consistency"
+  },
+  {
+    "file": "specs/event-kinds.md",
+    "location": "§1.2 session_id definition vs ceremonies.md rule N7 / REBUILD state",
+    "severity": "major",
+    "issue": "Two divergent normative definitions of the session id. event-kinds: SHA256(\"FlockSession/v0.2\" || pool_id || round_seq || cell_index || attempt || pset_commitment || msg_digest), with attempt \"incremented on every cell rebuild\". ceremonies N7: H(pool-id ‖ round-id ‖ cell-index ‖ attempt ‖ sub-attempt ‖ pset ‖ msg) and REBUILD = \"same attempt, sub-attempt++\". Field sets and attempt semantics conflict.",
+    "suggestion": "Adopt one preimage (with or without sub-attempt, with the domain tag) in both files, and make the attempt/sub-attempt increment rule identical.",
+    "lens": "consistency"
+  },
+  {
+    "file": "specs/ceremonies.md",
+    "location": "§4.1 step 9 — \"Alice collects signed write receipts ... The send is not complete until the receipts verify\"",
+    "severity": "major",
+    "issue": "event-kinds.md §1.5 says an OK \"proves nothing\", defines replication verification normatively as read-back over disjoint connections, calls the evidence local/non-portable, and makes relay-signed proof-of-write receipts an optional SHOULD with format [TBD]. Ceremonies (and whitepaper §7.1 step 6) instead make signed receipts the mandatory completion condition of every send — a contradiction in a load-bearing finality mechanism.",
+    "suggestion": "Restate §4.1 step 9 (and whitepaper §7.1.6) in terms of read-back verification per event-kinds §1.5, mentioning signed receipts as optional supplementary evidence.",
+    "lens": "consistency"
+  },
+  {
+    "file": "specs/event-kinds.md",
+    "location": "§3.11 kind 24406 — \"Addressing and discovery\" (wrap carries only pool p-tag + 20-bit PoW; receivers trial-decrypt all pool-tagged 1059s)",
+    "severity": "major",
+    "issue": "attacks.md G8 and synthesis attack #24 claim the mitigation \"PoW tags plus a cheap pre-auth filter tag the receiver matches before any decryption\", but the normative wire spec defines no such filter tag and instead specifies full trial-decryption of every pool-tagged wrap. A claimed spam mitigation has no wire-level existence.",
+    "suggestion": "Either specify the pre-auth filter tag in §3.11 (tag name, derivation, privacy analysis) or remove/qualify the claim in attacks.md G8 and the summary table.",
+    "lens": "consistency"
+  },
+  {
+    "file": "specs/event-kinds.md",
+    "location": "Citations \"attack #3/#19\", \"attack #20\", \"attack #21\", \"attack #24\", \"attack #11\", \"attack #25\" linked to ../analysis/attacks.md",
+    "severity": "major",
+    "issue": "These numbers are the synthesis's 25-row table numbering; attacks.md uses T1–T13/L1–L14/G1–G9/P1–P6 identifiers, so none of the cited numbers exist at the link target (e.g. #20 is L11, #21 is T12, #11 is T9). ceremonies.md has the same defect (\"attack #2\", \"#4\", \"#11\" at lines 29, 245, 267, 302). Cross-references point at content that does not exist under those names.",
+    "suggestion": "Re-key every \"attack #N\" citation in event-kinds.md and ceremonies.md to attacks.md's T/L/G/P identifiers (e.g. #20→L11, #21→T12, #11→T9, #24→G8/P4/P6, #25→G9, #2→T2, #4→T4, #3/#19→T3/L5).",
+    "lens": "consistency"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§7.3 step 1 — \"refresh intent (kind 24400): ownership proof, bonded intent fee, PoW ≤ 20 bits\"",
+    "severity": "minor",
+    "issue": "Inverted inequality: the required difficulty is 20 bits — Q validates \"PoW ≥ 20 bits on the wrap\" (event-kinds §3.4) and the synthesis says \"PoW ≥ 20 bits (capped)\". The 20-bit cap is on what relays/Q may demand, not on what the wallet provides; \"≤ 20 bits\" reads as the opposite requirement.",
+    "suggestion": "Change to \"PoW (20 bits, capped — see event-kinds §1.7)\" or \"PoW ≥ 20 bits (demand capped at 20)\".",
+    "lens": "consistency"
+  },
+  {
+    "file": "analysis/attacks.md",
+    "location": "§6 Residual trust — \"Worst case for a never-online receiver: tower-dependent until T_exp − 720\"",
+    "severity": "minor",
+    "issue": "whitepaper §8.2 states the same bound as \"tower-dependent from T_exp − 720\". The two docs flip the direction of the dependence window; the surrounding text (\"no third party is required until T_exp − 720, at which point ... towers exit\") supports \"from\". attacks.md copies the synthesis's internally inconsistent wording verbatim.",
+    "suggestion": "Change \"until\" to \"from\" in attacks.md §6 (and note the synthesis wording in ERRATA if it is considered an erratum).",
+    "lens": "consistency"
+  },
+  {
+    "file": "specs/event-kinds.md",
+    "location": "§3.5 kind 24401 validation — \"all txs are nVersion=3, zero-fee, with P2A anchors\"",
+    "severity": "minor",
+    "issue": "The 24401 content includes round_tx_template, but the round transaction is nVersion=2, fee-paying, RBF-signaled per onchain.md §3.1. As written the member-validation rule contradicts the round-tx template for one of the transactions in the same proposal.",
+    "suggestion": "Qualify the rule: \"all pre-signed txs (node, forfeit, claim) are nVersion=3, zero-fee, with P2A anchors; the round_tx_template is nVersion=2 per onchain.md §3.1\".",
+    "lens": "consistency"
+  },
+  {
+    "file": "specs/event-kinds.md",
+    "location": "§3.4 kind 24400 — \"Bond amount: [TBD] (set by pool policy in 38400 ...)\"",
+    "severity": "minor",
+    "issue": "Kind 38400's content schema and example params (§3.1) contain no bond-amount field, yet clients MUST reject pools whose params diverge from compiled-in expectations — so the field where bond policy would live is unspecified.",
+    "suggestion": "Add a bond field (e.g. params.intent_bond_sats: [TBD]) to the 38400 content schema, or drop the claim that 38400 carries the bond policy.",
+    "lens": "consistency"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.5 'A user who stops refreshing is not swept and not force-exited'",
+    "severity": "critical",
+    "issue": "The leaf/node sweep tapscripts (T_exp+4032 CLTV to Q) let the quorum take any dormant leaf ~26 days after the recovery leaf matures. A truly dormant user must come online, unroll, and pay an on-chain claim within ~58 days of funding or Q can legally confiscate — towers cannot help since the recovery spend needs the user's key. This contradicts 'not swept', 'no app opens', 'Q cannot confiscate checkpointed vTXOs' (§8.1), and the comparison table's 'Idle-funds cost: Zero'. It is the same Ark sweep §3.1 calls confiscatory, with a grace window.",
+    "suggestion": "State the hard deadline explicitly: dormant funds are self-custodial only until T_exp+4032, then sweepable. Reframe dormancy as a ~26-day post-expiry grace window, or remove/greatly extend the leaf-sweep path; correct §8.1, §9, and the §10 table.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.4 'no live quorum, no awake receiver, and no watchtower heroics' / §8.2 residual-trust table",
+    "severity": "critical",
+    "issue": "Claim-ladder ordering is maturity ordering, not preclusion: prior owners' claims remain forever valid once matured. A sender can unilaterally unroll early and outwait an offline recipient (head start is only 144 blocks per hop, ~1–5 days), stealing without any quorum collusion — contradicting §8.2's 'Sender + 4-of-7 operators must not collude' and 'Offline safety: None until T_exp−720'. The compensating 38404 deposit is height-triggered (not unroll-triggered) and is funded by the attacker.",
+    "suggestion": "Scope the claim: ordering protects owners or towers that act within the priority window. Specify event-triggered tower response to early unrolls, receiver- or third-party-verified deposits, and rewrite the §8.2 uncheckpointed and offline-safety rows to include sender-alone-plus-tower-failure theft.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§1.3 'sub-second irreversible finality for the payee' (must-not-regress list)",
+    "severity": "major",
+    "issue": "Flock's own send flow is ~1–2 s, and receipts are explicitly reversible under sender+4-of-7 collusion until the next checkpoint (up to an hour, longer offline). The document sets 'sub-second irreversible finality' as a bar a successor must not regress, then never acknowledges that arkoor payments miss it on both speed and irreversibility.",
+    "suggestion": "Either weaken the §1.3 requirement to what Flock actually targets (seconds-fast, collusion-bounded finality until checkpoint) or add an explicit concession that arkoor finality is weaker than Lightning's payee finality.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "Abstract: 'capped by a wallet value-at-risk policy'",
+    "severity": "major",
+    "issue": "Auto-checkpointing above the 50,000-sat VaR cap requires the receiver to be online for a round ceremony. The flagship use case is offline receive, where the wallet is not running and senders are not bound by the recipient's policy; multiple senders can pile unbounded uncheckpointed value onto an offline npub for days or weeks. The cap bounds what an online wallet tolerates, not actual exposure — never reconciled anywhere.",
+    "suggestion": "State that the VaR cap is enforceable only while online; quantify worst-case offline exposure (sum of receipts until next wake), and consider protocol-side limits, e.g. Q refusing cosigns beyond a per-recipient uncheckpointed ceiling.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§6.1 'nullifier = H(outpoint ‖ seq)' and 'anti-equivocation spine'",
+    "severity": "major",
+    "issue": "Because seq is part of the hash, two spends of the same outpoint produce unlinkable nullifiers. A colluding quorum double-spends by signing the conflict under a new seq in the next root — no same-seq fork, so the portable equivocation proof never triggers. Victim-side detection requires downloading the full (nullifier, commitment) leaf set of every root, a data-availability burden the paper never specifies. The fraud-proof story covers only the clumsiest attack.",
+    "suggestion": "Derive the nullifier deterministically from the outpoint alone (so any duplicate collides visibly in the log), or explicitly concede that cross-seq double-spend detection requires full-log availability and say who serves it.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§7.1 step 3 'publishes the updated 30178 checkpoint root' vs §6.1 'Each hourly root'",
+    "severity": "major",
+    "issue": "§7.1 has Q publish an updated checkpoint root inside the 1–2 s send flow, and §4.3 says the receiver's package includes a Merkle inclusion proof. §6.1 and the abstract say roots are hourly. If hourly, fresh receipts cannot complete the fail-closed verification (§7.2 steps 3–4) for up to an hour; if per-payment, the 'hourly checkpoint' trust bound and per-root ≥k replication-receipt cost are misstated. The cadence is load-bearing and inconsistent.",
+    "suggestion": "Pick one cadence and propagate it: either per-cosign incremental roots (and restate replication cost and the abstract's 'hourly checkpoint' trust window) or hourly roots (and describe what receivers verify in the interim).",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§9 Economics summary",
+    "severity": "major",
+    "issue": "The summary's own numbers do not close: refresh fees of 0.3–0.4%/month ≈ 3.6–4.9%/yr on hot balances versus ~5% APY cost of capital on float equal to user balances (10 BTC for 10k users × 100k sats) — headline revenue is at or below headline capital cost, yet R1 demands 'margin above cost of capital'. Why float must equal 100% of balances when forfeits recycle capital hourly is never derived.",
+    "suggestion": "Add a one-paragraph reconciliation in §9: float-to-balance ratio with derivation, and the full fee stack (refresh + arkoor + gateway + subscriptions) versus capital cost, showing the actual margin. A pointer to analysis/economics.md is not enough when the in-text numbers contradict R1.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§7.1 step 5 'mandatory part of send' (funded kind-38404 height-deposit)",
+    "severity": "major",
+    "issue": "Every send must fund a tower deposit with a fee budget, yet §9's user cost ('1–3 sats + 0.05%') omits it; a credible exit budget (kvB-scale unroll+claim at prevailing feerates) could dwarf small payments. How a keyless, permissionless tower is paid, bonded, or refunded over Nostr is never described. Meanwhile §1.2 attacks Lightning watchtowers for having 'no sustainable fee model' and problem 10 concedes Flock's tower market is unproven — but here it is mandatory in the hot path.",
+    "suggestion": "Specify the deposit funding mechanism and typical budget, include it in the user fee summary, and acknowledge the symmetry with the Lightning watchtower critique: Flock makes the unproven tower economy mandatory per send.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§4.3 'Actual payments never wait for a round' / 'Arkoor chains are capped at 4 hops'",
+    "severity": "major",
+    "issue": "A hop-4 recipient cannot spend, and a sender whose change reaches hop 4 cannot send again, until the next hourly round plus a refresh fee — so active users and merchants do wait for rounds, routinely. Combined with hourly auto-checkpointing above the VaR cap, checkpoint demand competes for a 1,024-leaf-per-round capacity that is never analyzed. The throughput/velocity ceiling is never stated.",
+    "suggestion": "State the velocity bound explicitly (≈4 chained transfers per leaf per round interval), describe what a hop-4 holder does, and analyze round capacity versus auto-checkpoint demand for a 10k-user pool.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§4.1 'signed key-deletion attestations (kind 31401) so that share or ephemeral-key retention becomes provable fraud after the fact'",
+    "severity": "major",
+    "issue": "FROST signatures do not attribute which share subset signed, and proactive resharing leaves the group key Q unchanged, so a hoarded old-epoch share set still controls funds and a theft cannot be traced to any attestor. The attestation is an unfalsifiable promise — exactly the 'key-share deletion cannot be proven' failure the paper uses against Spark in §3.2. 'Provable fraud' is asserted with no mechanism.",
+    "suggestion": "Either explain the attribution mechanism that makes retention provable, or downgrade the claim: attestations create reputational/legal exposure only, and operator share deletion remains unverifiable (consistent with open problem 6).",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§6.2 'Liveness can be attacked...; safety cannot' and §5.3 'a forfeit always beats every laddered claim... even if Q later dies'",
+    "severity": "major",
+    "issue": "In a timelock-deadline system, sustained liveness denial is a safety failure, and the paper's own concessions say so: problem 9 (held forfeits need someone broadcasting within 144 blocks of a stale unroll), problem 3 (deadline-adjacent exits delayable), the recovery-vs-sweep race, and height-deposit execution. 'Always beats' silently assumes a live broadcaster. The absolutes contradict the open-problems list.",
+    "suggestion": "Scope both claims: safety-from-absence holds for checkpointed funds with an owner (or tower) acting within deadlines; enumerate the deadline-driven exceptions inline rather than only in §11.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§1.2 'at 50 sat/vB with full HTLC slots this can exceed one million sats' vs §5.6 'Exit cost at 10 sat/vB'",
+    "severity": "minor",
+    "issue": "Lightning's exit is priced at a 5x higher feerate and the pathological full-HTLC-slot worst case, while Flock's exit is priced at calm 10 sat/vB. At 50 sat/vB a Flock first exit is ~80k sats. The structural point (bounded vs HTLC-scaling cost) survives a fair comparison, but the asymmetric framing is salesmanship.",
+    "suggestion": "Quote both systems at the same feerate(s), e.g. a small table at 10 and 50 sat/vB, typical and worst case for each.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§5.5 'the judges called this graft the single best consumer-trust property in any contest design' / §8.4 'the honest weather report, not a sales page'",
+    "severity": "minor",
+    "issue": "The paper repeatedly cites an internal, unpublished contest ('judges', 'panel', '42 findings') as authority and quotes its praise, while self-certifying its own honesty ('conceded, not glossed', 'not a sales page'). To a cold reader these are unverifiable appeals — the validation pattern the paper criticizes elsewhere.",
+    "suggestion": "Link or cite the contest/panel artifacts (the paper points to analysis/attacks.md for the matrix; do the same for judge reports), and cut the self-praise; let the concessions speak for themselves.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "§4.1–§7 parameter choices ('4-of-7', '≥8 relays, ≥3 operator-independent', '50,000 sats', '10,000 sats', '20 bits', '120-second', '~1–2 s')",
+    "severity": "minor",
+    "issue": "Core constants appear without derivation or pointer: why 4-of-7 (not 5-of-9), how relay independence is verified, why 50k-sat VaR default, why the 10k-sat leaf floor (only ~3x the 10 sat/vB exit cost, underwater at 50 sat/vB), whether 20-bit PoW deters GPU spam, and whether 1–2 s cosign latency is achievable across 4 Tor hidden-service operators via relays.",
+    "suggestion": "For each constant, add a one-line rationale or an explicit pointer to the spec/analysis section that derives it; flag the latency figure as a target pending measurement.",
+    "lens": "cold-read"
+  },
+  {
+    "file": "whitepaper.md",
+    "location": "R2 'no operator-hosted endpoint... may be load-bearing for safety' vs §7.2/§7.5 'Q's ciphertext archive'",
+    "severity": "minor",
+    "issue": "Recovery of uncheckpointed receipts falls back to the quorum's ciphertext archive — an operator-hosted service that is load-bearing precisely for the funds the protocol cannot recover from seed. This is conceded as open problem 2, but R2's absolute phrasing is contradicted rather than scoped.",
+    "suggestion": "Scope R2: 'no operator endpoint is load-bearing for checkpointed funds; uncheckpointed receipts additionally depend on relay retention and the quorum archive (problem 2)'.",
+    "lens": "cold-read"
+  }
+]

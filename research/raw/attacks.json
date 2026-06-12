@@ -1,0 +1,296 @@
+[
+  {
+    "name": "Deterministic secnonce reuse extracts private keys / FROST shares (whole-pool theft)",
+    "severity": "critical",
+    "description": "The load-bearing nonce rule derives secnonce=H(round-id‖attempt‖signer-set‖tx-digest), omitting counterparties' pubnonces. MuSig2 forces committing your nonce before seeing others', so deterministic nonces are provably unsafe (the reason MuSig-DN exists). Attack: a malicious co-signer/relay sends a proposal for one session-id with nonce-set N1; victim signs s1=k+e1·a·x and 'deletes' k. Relay drops s1 and induces a crash or same-attempt retry; the victim re-derives the identical k, now against nonce-set N2 (aggregate nonce differs, giving e2). Two partials, same k, e1≠e2 yield x=(s1−s2)/(e1−e2). This recovers a user key or an operator FROST share; collect k shares, reconstruct Q, drain the entire pool.",
+    "mitigation": "Never use deterministic nonces in MuSig2/FROST round 1. Use CSPRNG nonces plus a durable monotonic anti-reuse log (BIP-327 secnonce hygiene), or MuSig-DN's ZK-proven derivation. Abort permanently if any session-id repeats and forbid post-crash re-signing of an attempt unless a persisted used-nonce record proves the partial was never emitted.",
+    "residualRisk": "Durable used-nonce logs conflict with the stateless, seed-only wallet goal; a wiped or restored device can still be induced to reuse a nonce."
+  },
+  {
+    "name": "FROST-threshold-of-MuSig2 composition leaks the group key under split relay view",
+    "severity": "critical",
+    "description": "Q signs as one MuSig2 cosigner whose two nonce points and binding-factor partial are FROST-threshold-generated — no shipped, proven construction exists (FROSTR does plain Schnorr only). MuSig2's binding factor b=H(aggnonce,msg) depends on the user's nonces. Over untrusted relays the coordinator/user splits the view: deliver nonce-set N to operator O1 and N' to O2 inside one session. Operators compute different b, produce FROST partials over inconsistent challenges; Lagrange-combining inconsistent partials yields a signature whose algebra leaks the group secret or is forgeable (Drijvers/ROS-class). Open many concurrent ≤1024-cosigner sessions (lossy relays guarantee aborts/retries) to grind candidates. One success compromises Q = total pool theft.",
+    "mitigation": "Treat as unshipped crypto behind a formal-proof and external-audit gate before mainnet (the design flags this). Operators must canonicalize and sign the full session transcript (every pubnonce, signer set, message) and verify identical views before emitting any partial; abort on any divergence; strictly bound concurrent open sessions per group key.",
+    "residualRisk": "Even with transcript checks the composition is unproven; one subtle leak in the threshold binding-factor computation compromises every signature Q ever produces."
+  },
+  {
+    "name": "Arkoor double-spend with eclipsed 38403 detection and unactionable fraud proof",
+    "severity": "critical",
+    "description": "Arkoor double-spend needs sender U plus 3-of-5 Q (admitted), but the claimed net — receiver checks 38403 on ≥3 relays and gets a no-conflict attestation — fails because R2 lets relays selectively serve. Colluding Q cosigns U's leaf to Bob (seq=n) and publishes it only to relays the attacker controls for Bob's npub, while a conflicting spend back to U goes to other relays. Bob, eclipsed on his NIP-65 read relays, sees only the 'paid' entry and ships goods. Bob's later refresh is rejected (leaf already spent). The 'portable fraud proof' is worthless: FROST shares carry no on-chain bond, so a smash-and-grab's gain dwarfs reputational cost. The bounded trust window is really uncapped custodial loss.",
+    "mitigation": "Receiver must fetch 38403 from disjoint relay sets including its own relays and fail closed on any absence/timeout, and confirm replication on ≥k independent mirrors before treating funds as spendable. Bond operators with on-chain collateral slashable by the equivocation proof; absent bonded slashing, hard-cap uncheckpointed receive value.",
+    "residualRisk": "Fail-closed receive reintroduces withholding DoS; a globally eclipsing adversary still blinds the receiver; bonding needs operator capital the federation may not post."
+  },
+  {
+    "name": "Forfeit/new-leaf hash-lock atomicity break enables refresh theft and mass forfeit",
+    "severity": "critical",
+    "description": "Refresh atomicity rests on a Bark-style hash-lock: the old-leaf forfeit and the new leaf both gate on preimage X that Q reveals 'after the new round tx confirms' — asserted, not script-bound. If X is not cryptographically bound to the specific round tx containing the user's new leaf, colluding Q can confirm a round tx that omits or relocates the victim's new leaf, then reveal X (legitimately for included users), broadcast the victim's forfeit, and sweep the old leaf — victim loses the vTXO and gets no replacement. Worse, if one shared preimage gates many forfeits, revealing it for the included users simultaneously unlocks the forfeits of excluded users, enabling mass refresh theft in a single round.",
+    "mitigation": "Specify atomicity at script level: make the forfeit's spend condition derivable only from the confirmed round txid that actually includes the user's leaf (e.g., a per-user preimage committed inside that leaf), so the forfeit is unspendable unless the matching new leaf exists on-chain. Use distinct per-user preimages, never a shared round preimage.",
+    "residualRisk": "Covenant-less Bitcoin cannot truly bind a pre-signed forfeit to another transaction's confirmation; any construction leaves a window where Q controls reveal ordering."
+  },
+  {
+    "name": "Dead-quorum makes stale exits uncontestable, robbing arkoor recipients",
+    "severity": "critical",
+    "description": "The design claims a dead quorum (≥3 operators gone) is safe — 'theft impossible, coins go only to exiting users.' False for arkoor. The forfeit that punishes a stale exit spends the MuSig2(U,Q) keypath, requiring a LIVE Q partial. With Q dead, no forfeit can be produced. Attack: U sells a vTXO via arkoor (receives goods/cash off-chain), then waits for or induces quorum death (only three operators must be gone), and unilaterally exits the pre-sale leaf U still holds path/claim for. No forfeit is possible; the stale exit confirms after CSV; U double-spends and the buyer is robbed with zero recourse. Quorum liveness is therefore a theft-prevention dependency, not merely a payment-availability one.",
+    "mitigation": "Make stale-exit defense consensus-enforced rather than Q-dependent via decrementing absolute-locktime ordering (design B) so the current owner's exit is valid strictly before any prior owner's — but that requires the buyer to hold a pre-signed exit, contradicting offline/keyless receive. Otherwise forbid any onward spend of received value until it is checkpointed.",
+    "residualRisk": "Decrementing-locktime ordering is future-work and hard with covenant-less Ark; until shipped, all uncheckpointed arkoor is stealable whenever the quorum stalls or dies."
+  },
+  {
+    "name": "Delegated offline refresh lets the quorum re-sign a sock-puppet branch and steal the balance",
+    "severity": "critical",
+    "description": "In delegated offline refresh the user is not in the ceremony and signs nothing, so the new tree's internal keys = MuSig2-agg(co-branch users + Q) with no contribution the offline user can delete. Q both runs the refresh AND composes the branches. Attack: Q (3-of-5 colluding) places the delegated user's leaf in a subtree whose every other leaf is Q-controlled sock-puppet, and Q retains all ephemeral keys (deletion is unenforced; attestations are future-work). With all co-branch cosigners + Q under one party and zero honest deleters, the attacker re-signs the parent node to an alternate child redirecting the entire subtree to itself before the user returns (up to ~8 weeks). The design mis-frames this as a 'weaker covenant'; it is full-balance theft under the same collusion threshold.",
+    "mitigation": "Disallow delegated refresh (default to watchtower exit), or require the offline user's pre-authorized key to be a mandatory cosigner of every new ancestor node so their deletion still gates it, with user-attested diverse co-branch composition. Ship kind-31401 signed deletion attestations as a hard precondition, not future work.",
+    "residualRisk": "A user cannot delete a key they never generated; any delegated construction without the user as a deleting cosigner leaves Q+branch able to re-sign, and 'deletion' is fundamentally unprovable."
+  },
+  {
+    "name": "Refresh censorship plus watchtower suppression yields a confiscating T_exp sweep",
+    "severity": "high",
+    "description": "Operators can steal from offline users by attrition without breaking crypto. Target a user whose refresh is due. Q stalls or refuses their refresh ceremony (censorship — an admitted capability) and, via the ≥2 operator-run paid relays in the pool's ≥8-relay set, withholds the target's kind-38404 watch request and kind-38405 alerts from the thin, operator-backstopped watchtower market; public relays are AUTH-gated/spammed for the target. The offline user's pre-signed exit never reaches a tower. At T_exp the quorum executes the 'legitimate' sweep (`<T_exp> CLTV <Q>`) and confiscates the funds. Censorship plus a thin watch market becomes outright confiscation of exactly the offline users R3 promises to protect.",
+    "mitigation": "Diversify watch requests across many independent non-operator towers using design-C 'broadcast-at-height-H unless superseded' pre-deposits so action is automatic and fee-budgeted. Add the consensus recovery-tapleaf so dormant funds degrade to self-custody instead of being sweepable. Require multi-relay non-operator publication receipts before each refresh deadline.",
+    "residualRisk": "The permissionless tower market is thin and unpaid; recovery-tapleaf is future-work; a resourced adversary can still degrade enough relays/towers to win some T_exp races."
+  },
+  {
+    "name": "144-block forfeit race lost via TRUC/P2A pinning or replacement cycling (seller reclaims sold vTXO)",
+    "severity": "high",
+    "description": "Unilateral exits are TRUC/v3 zero-fee with a P2A anchor CPFP'd by anyone. A seller who arkoor-sold a vTXO exits the pre-sale leaf; Q must broadcast the forfeit and CPFP it within the 144-block (~24h) CSV window. Because both forfeit and exit are zero-fee and depend on third-party CPFP, the attacker can win the fee race or run replacement-cycling on the shared anchor/child to evict or delay the forfeit's CPFP package until 144 blocks elapse, after which the stale exit claim matures and confirms. TRUC limits but does not eliminate cycling when an honest party must repeatedly re-fund a competing package. Net result: the seller double-spends the sold coin and the buyer is robbed. The decrementing-locktime fix is explicitly future-work.",
+    "mitigation": "Adopt deadline-based decrementing-absolute-locktime ordering so the current owner's claim is consensus-valid before any stale one, removing the mempool race. Until then lengthen the contest window, mandate well-funded operator CPFP with pre-committed fee budgets, monitor for cycling, aggressively rebroadcast forfeits, and keep TRUC topology strictly 1p1c.",
+    "residualRisk": "Replacement cycling has no complete mempool-policy fix; a miner-colluding or well-capitalized attacker can still delay forfeits across 144 blocks during fee spikes."
+  },
+  {
+    "name": "PTLC/vHTLC adaptor-secret leak via nonce reuse and swap replacement cycling",
+    "severity": "high",
+    "description": "Cross-pool and LN bridging use vHTLC/PTLC adaptor signatures over MuSig2 between quorums. Adaptor sigs are maximally nonce-sensitive: the adaptor secret (the PTLC point's discrete log = payment secret) leaks if the underlying nonce repeats or if one adaptor is finalized against two contexts — exactly what the deterministic-secnonce rule (#1) plus relay-driven retries enable. Attack: induce a retry so a forwarding node finalizes two adaptor sigs under one nonce, extract the adaptor secret, then pull the incoming payment without revealing the preimage downstream, or claim the swap without paying. Separately, the admitted replacement-cycling exposure on the swap's 144-block CLTV lets an attacker cycle out the timeout claim and steal the swap output.",
+    "mitigation": "Use fresh, anti-reuse-logged nonces for all adaptor/PTLC signing (never the deterministic session-id scheme); verify the adaptor point and recomputed challenge before finalizing; allow one finalize per nonce, durably recorded. For swaps, use conservative CLTV deltas, watchtower-backed rebroadcast, and treat cycling as a live threat (per the design's own admission).",
+    "residualRisk": "Adaptor-secret leakage is catastrophic and silent; HTLC-path cycling remains unsolved at mempool level, so bridge liquidity stays at risk during congestion."
+  },
+  {
+    "name": "Long-offline arkoor receiver confiscated at T_exp (no watch request filed)",
+    "severity": "high",
+    "description": "An arkoor receiver who never comes online before T_exp has no kind-38404 watch request filed (the design admits this gap). The funds sit at a leaf only that recipient's key controls, but since the recipient never acts, no exit is ever broadcast. At T_exp the quorum's legitimate sweep `<T_exp> CLTV <Q>` confiscates the coin. A motivated quorum mines its own 38403 log and gift-wrap archive to identify P_B recipients with no subsequent refresh or exit activity (long-dormant npubs), then simply waits out their clocks and sweeps. This is targeted theft of precisely the users R3/R4 promise to protect: receive while offline, zero prior setup.",
+    "mitigation": "Ship design-C watchtower height-deposits ('broadcast pre-signed exit at H unless superseded') created at receive time by the sender on the receiver's behalf, plus the consensus recovery-tapleaf so dormant value degrades to self-custody rather than being swept. Make a funded watch request a mandatory part of every arkoor send.",
+    "residualRisk": "Sender-filed watch requests can be withheld by relays (#7); recovery-tapleaf is future-work; truly never-online npubs still depend entirely on third parties acting in time."
+  },
+  {
+    "name": "Round-assembly view-split commits a victim's input to an aggregate key they cannot exit",
+    "severity": "high",
+    "description": "The round-tx root internal key = MuSig2-agg(all ≤1024 participants' ephemeral keys, Q), assembled by Q over untrusted relays. Key-aggregation coefficients stop classic rogue-key cancellation only if every signer agrees on the exact participant set. Q splits the view: it shows victim U a participant set/tree (24401) in which U's leaf appears, collects U's partial over the root, but assembles the ACTUAL on-chain root from a different set/coefficients where U's value funds an output U cannot unilaterally exit (path differs from what U verified). Combined with the unbound forfeit hash-lock (#4), U releases its boarding/refresh input before confirming the real output matches, and Q captures the input at conversion.",
+    "mitigation": "Before releasing any forfeit or boarding spend, every signer must verify that the FINAL aggregate key and confirmed round-tx output script exactly equal locally recomputed values from the signed participant set, and that their leaf and full path are present on-chain. Sign a canonical participant-set commitment; abort on mismatch; bind input release to confirmed-output verification.",
+    "residualRisk": "Verification needs a reliable L1 view; an eclipsed or SPV-light signer can be shown false confirmations, re-enabling capture at conversion time."
+  },
+  {
+    "name": "Recovery-tapleaf graft names the stale pre-arkoor owner between checkpoints",
+    "severity": "high",
+    "description": "The grafted seed-only recovery tapleaf pays the 'checkpointed owner after epoch_end+288 CLTV,' rotated only at each refresh/checkpoint — not at each arkoor hop. But arkoor transfers ownership off-chain between checkpoints, so after Alice arkoor-pays Bob the on-chain leaf's recovery path still names ALICE until the next refresh. Attack: Alice pays Bob; Bob holds uncheckpointed value; Alice (or anyone holding the prior recovery key) waits epoch_end+288 and sweeps the output via the stale recovery path, stealing Bob's received funds. The very graft sold as 'the single best consumer-trust property' reintroduces a stale-state theft window precisely for uncheckpointed arkoor — the funds Flock is already weakest on.",
+    "mitigation": "Forbid onward arkoor spends of a leaf until its recovery tapleaf is rotated to the new owner (require a checkpoint before the recovery path can name a new owner), or make the recovery path's locktime strictly later than any outstanding arkoor claim. Rotate the recovery leaf atomically with each transfer, not only at refresh.",
+    "residualRisk": "Atomic per-transfer rotation needs an on-chain or quorum action per hop, breaking the offline/zero-setup receive promise; otherwise the stale-owner window persists between checkpoints."
+  },
+  {
+    "name": "FROST proactive resharing/DKG over untrusted relays enables share corruption or recovery",
+    "severity": "medium",
+    "description": "FROST monthly proactive share refresh and the genesis PedPoP DKG run as kind-24404 messages over untrusted relays. Resharing is split-view-sensitive: a relay/coordinator that selectively drops or reorders reshare shares can drive operators to inconsistent share sets (bricking the group and forcing a mass exit), or by replaying old-epoch reshare messages alongside new ones induce an operator to combine cross-epoch material that aids reconstruction by the mobile adversary proactive refresh is meant to defeat. Over successive months an attacker who compromises different operator subsets each epoch can, without consistent transport authentication, accumulate enough to reconstruct the group key.",
+    "mitigation": "Run DKG/resharing over authenticated, ordered, acknowledged channels with epoch-tagged transcripts and explicit complaint rounds; require all participants to sign and verify one canonical reshare transcript before committing; reject any cross-epoch material; verify new shares against the unchanged group public key before deleting old shares.",
+    "residualRisk": "Nostr relays provide no ordering or consensus; building reliable authenticated resharing on them is the same load-bearing-liveness problem, and proactive refresh only bounds, not eliminates, mobile-adversary risk."
+  },
+  {
+    "name": "Quorum-offline expiry coercion (timelock-boundary liveness DoS)",
+    "severity": "high",
+    "description": "Read a pool's T_exp ladder from public kind-38400/38402 events (funding heights are on-chain and announced). In the ~1008-block window before deadlines cluster, knock 3 of 5 operators offline at once: L4-DDoS their paid relays and signing endpoints, BGP/route-leak their ASNs, or serve abuse/legal takedowns to relay hosts. With fewer than k signers, no rounds, refreshes, arkoor cosigns, or sweeps occur (exit-only mode). Every holder must unilaterally exit on-chain simultaneously, precisely when fee pressure peaks. Sustaining the outage across the refresh margin converts a temporary halt into pool-wide forced exit.",
+    "mitigation": "Geographically/AS-diverse operators behind hidden services; n much larger than k (e.g., 3-of-9); keep the existing ~7-day refresh margin generous; watchtower auto-exit before expiry; per-operator heartbeat (kind 31401) so clients pre-emptively exit on detected degradation rather than at the cliff.",
+    "residualRisk": "A funded adversary can still force pool-wide exit by sustaining a multi-operator outage across the margin; theft is impossible but liveness and fee predictability are not."
+  },
+  {
+    "name": "Refresh-ceremony griefing (Sybil-seat + branch-stall collapse)",
+    "severity": "high",
+    "description": "Receiving arkoor is free and needs no on-chain setup (R4), so accrue hundreds of dust vTXOs to distinct keys across many branches — each a penalty-immune 'existing holder' seat satisfying the forfeitable-ownership intent gate. Join every hourly round, complete MuSig2 round 1, then withhold the round-2 partial just inside the 30s timer. Branch-only signing shares nodes, so one withholder stalls everyone on that radix-4 branch; the <=3 re-proposals then fail the round. Over lossy relays, withholding is indistinguishable from packet loss, so per-vTXO penalization cannot fire. Repeat hourly; legitimate refreshers miss windows and cascade into delegated/forced exit.",
+    "mitigation": "Non-dust seat minimum plus escalating per-vTXO PoW; a forfeitable fee bonded at intent that is slashed on non-completion (not only on proven equivocation); randomized/segregated branches so one staller can't block disjoint refreshers; longer phase timers; reputation-weighted seat allocation.",
+    "residualRisk": "Malice is indistinguishable from genuine relay loss, so honest users get penalized or the griefer escapes; cost-to-grief stays far below cost-to-defend."
+  },
+  {
+    "name": "Exit-storm fee spike strands sub-economic vTXOs",
+    "severity": "high",
+    "description": "Trigger a correlated exit (via the quorum DoS, or just DDoS the quorum) so a pool's holders broadcast inside one fee window. Each exit needs depth-5 node txs plus a leaf claim plus a P2A CPFP child (~2.2 kvB first-mover), and every tx must pay fees through the keyless anchor. Simultaneously fee-snipe L1 with high-fee filler to push the floor to 50-100 sat/vB. A 10k-sat vTXO now costs more than its value to exit; rational holders abandon it and the quorum sweeps the residue at T_exp. Laddered expiries don't help once the adversary forces the timing.",
+    "mitigation": "Wallet value-at-risk cap that consolidates dust before deadlines; batch exits across shared branches; pre-emptive off-peak exits driven by fee-rate oracles; minimum vTXO denomination so leaves stay exit-economical; operator-subsidized emergency exit batching at mass-exit.",
+    "residualRisk": "Any vTXO whose value approaches its ~450 vB-2.2 kvB exit cost is economically strandable on demand; dust holders predictably lose their leaves to the expiry sweep."
+  },
+  {
+    "name": "TRUC anchor-slot contention / CPFP fee-escalation grief",
+    "severity": "medium",
+    "description": "Exit packages are nVersion=3 (TRUC): a parent admits at most one unconfirmed child, and the keyless P2A anchor is spendable by anyone. During a storm, attach your own minimal-fee child to a victim's (or a shared branch's) node-tx anchor first, occupying the single child slot. The honest CPFP must RBF-replace your child, paying strictly more; you re-pin just below each time, forcing a fee-escalation war that delays confirmation of the shared branch and every exit beneath it. Shared-branch node txs amplify this: one contested parent stalls all descendant exits.",
+    "mitigation": "Have the legitimate exiter pre-sign its own minimum-feerate child at creation so the anchor isn't a free slot; submit 1p1c via submitpackage so the child is evaluated atomically; mempool policy favoring higher-feerate children; SIGHASH_ANYONECANPAY fee contributions instead of a shared anchor.",
+    "residualRisk": "Attacker can still push defenders into higher fees and delayed confirmation during congestion; griefing remains cheap relative to the delay imposed on shared branches."
+  },
+  {
+    "name": "Data-availability stranding of arkoor funds defeats seed-only recovery",
+    "severity": "critical",
+    "description": "Arkoor-received value never touches L1, so its exit data (full tx chain + sigs in the 1059->24406 gift wrap) is discoverable ONLY from relay copies plus Q's archive — not from seed-derived L1 scanning. Relays guarantee no storage and routinely purge; accelerate eviction by flooding the victim's read relays with high-volume events to pressure retention/LRU, then DDoS or legally pressure operator archives. An offline receiver returns to find no gift wrap anywhere and cannot reconstruct the spend path. The grafted CLTV recovery-leaf cannot save these funds: the current off-chain owner's UTXO is not on-chain and not seed-derivable.",
+    "mitigation": "Mandatory client-side persistent backup of every received package; receiver-side replication-verified finality (don't show received until confirmed on >=k independent mirrors); paid pinning subscriptions with audited retention SLAs; force a prompt on-chain checkpoint of received arkoor above a low threshold so funds become L1-recoverable.",
+    "residualRisk": "Received arkoor value held by a long-offline user stays strandable via coordinated purge plus archive denial; seed-only recovery of off-chain receipts is structurally impossible."
+  },
+  {
+    "name": "NIP-65 relay-set eclipse hides conflicts and refresh windows",
+    "severity": "high",
+    "description": "Read the victim's read relays from their public kind-10002, then deny an honest view: L4-DDoS or TCP-reset those relays, or (if you can replace their 10002 via key reuse, a compromised client, or an accepted malicious relay recommendation) repoint them to attacker-friendly relays. The receive flow's 'check 38403 on >=3 independent relays' is then satisfied entirely by attacker relays showing no conflict; round announcements (38401) are withheld so the victim never sees refresh windows. Result: the victim is stranded past the T_exp-1008 deadline and simultaneously exposed in the offline-receive double-spend window.",
+    "mitigation": "Hard-code a diverse bootstrap relay set independent of operator curation; require attestations from relays under distinct operators/ASNs with signed relay identity; Tor over multiple independent circuits; client alarms on stale round-announcement gaps; cross-check L1 round txids against explorer/compact-filter ground truth.",
+    "residualRisk": "A network-position adversary (ISP, hostile Wi-Fi, state) can still partition a target's reachable relays; 'independence' is unverifiable from the client's vantage point."
+  },
+  {
+    "name": "Sweep-at-expiry confiscation of offline or censored users",
+    "severity": "high",
+    "description": "The round's CLTV path `<T_exp> CLTV DROP <Q> CHECKSIG` lets a live quorum sweep everything after expiry. A user offline past T_exp-720 who never filed a watch request (a never-yet-online arkoor receiver cannot file one), or whose 38404 watch-request and pre-deposit events were dropped by censoring relays, gets no tower broadcast. Combine: censor the victim's watch requests (relay eclipse) and let the legitimate quorum reach T_exp; Q sweeps the unexited leaf. Funds move to the operator by protocol, not theft — pure liveness/censorship-induced confiscation of a passive holder.",
+    "mitigation": "Default automatic watchtower height-deposits funded at receipt for every vTXO; multiple independent towers per leaf; operator-run backstop towers with published SLAs; a consensus recovery tapleaf paying the owner after expiry instead of a Q-only sweep; client refuses receipt without a confirmed tower commitment.",
+    "residualRisk": "The watchtower market is thin and censorable; offline users beyond the margin with suppressed watch requests still lose leaves to the expiry sweep."
+  },
+  {
+    "name": "Refresh hash-lock atomicity freeze (preimage withholding)",
+    "severity": "high",
+    "description": "Refresh consumes the user's old vTXO as an input to the new round tx; activating the new leaf gates on a preimage Q reveals only after that round tx confirms — and the reveal is a censorable Nostr event. A colluding quorum subset lets the round tx confirm (old vTXO now spent on-chain) then withholds/censors the preimage. The user now has no activated new leaf and no spendable old vTXO; the script-level atomicity is asserted, not specified, so there may be no unilateral path to force the preimage. Balances freeze until reveal — indefinitely under sustained censorship.",
+    "mitigation": "Specify the forfeit/new-leaf swap as an on-chain atomic PTLC where the same preimage that lets Q claim the forfeit lets the user claim the new leaf; publish the preimage to >=8 relays with replication proof; add a timeout path returning the old vTXO if the reveal is late.",
+    "residualRisk": "Until atomicity is script-enforced and proven, a colluding quorum can freeze mid-refresh balances by withholding an off-chain reveal; only fraud-proof accountability, not recovery, remains."
+  },
+  {
+    "name": "Coordination-event censorship strands receive-finality and refresh discovery",
+    "severity": "medium",
+    "description": "The 38403 cosign log and quorum no-conflict attestation must be seen before a receiver treats funds as safe, and 38400/38401 announce pools and round phase deadlines. A relay-level adversary selectively drops these to a target (no fund movement needed): the receiver is pinned in permanent 'uncheckpointed' limbo and cannot safely spend, and the holder never learns refresh windows so misses the deadline ladder. Because operators curate the per-pool relay set (>=2 operator-run), they can stack it so the victim lacks 3 genuinely independent honest relays.",
+    "mitigation": "Receiver requires attestations from operator-independent relays/ASNs and falls back to direct L1 verification; clients ignore operator-supplied relay curation and use a diverse pinned set; signed monotonic sequence (kind 30178) with inclusion proofs so a withheld latest entry is detectable; timeout-to-exit if attestations stall.",
+    "residualRisk": "Targeted, low-detectability withholding keeps a specific user perpetually unfinalized or deadline-blind, without ever being provable as an attack."
+  },
+  {
+    "name": "Anti-spam gate (PoW + paid AUTH) as a censorship/liveness chokepoint",
+    "severity": "medium",
+    "description": "Intents need NIP-13 PoW >=20 bits plus paid writes and NIP-42 AUTH. Two abuses: (a) flood the pool relays so they raise minimum PoW under load — low-power mobile clients cannot mine an intent within the 30s phase timer and silently drop out of refresh near deadlines; (b) operator-run paid relays selectively deny AUTH or stall writes for a targeted npub, a deniable per-user censorship lever that blocks that user's refresh intents and exit/watch events while serving everyone else.",
+    "mitigation": "Allow intent submission across many independent relays so one AUTH denial isn't fatal; cap/standardize PoW so it cannot be inflated against mobile; pre-mine PoW ahead of the window; signed proof-of-write receipts so AUTH denial is attributable; keep a non-paid public-relay fallback path.",
+    "residualRisk": "A relay can always slow or deny a specific identity deniably; PoW inherently disadvantages the mobile users the protocol targets, exactly during congestion."
+  },
+  {
+    "name": "Boarding-deposit strand via post-broadcast quorum stall",
+    "severity": "medium",
+    "description": "Boarding funds an on-chain P2TR 2-of-2 (U,Q) whose only unilateral escape is the `4320 CSV <U>` refund (~30 days). Watch the chain for boarding txs (their address template is recognizable) and time a quorum DoS to the moment after a victim's boarding tx confirms but before it is converted into a round leaf. The deposit is now locked in 2-of-2 with an uncooperative quorum; the victim's sole exit is to wait the full 30-day CSV. Repeated against new entrants, this denies onboarding and strands fresh capital at will.",
+    "mitigation": "Shorter boarding refund CSV (a few days) traded off against conversion latency; give a pre-signed unilateral timeout reclaim tx at deposit; convert boarding into a leaf in the same round it confirms; warn users not to board during degraded-quorum heartbeats.",
+    "residualRisk": "Any deposit caught between confirmation and conversion is strandable for the full refund CSV; onboarding is a reliable DoS target around quorum outages."
+  },
+  {
+    "name": "Blossom-hosted tree-commitment data-availability loss",
+    "severity": "medium",
+    "description": "Round results (38402) may store the 1024-leaf vTXO-tree commitment off-relay as a Blossom sha256 blob to keep events small. Blossom servers carry weaker availability guarantees than relays and are a narrow target: DDoS or simply wait out retention on the one or two referenced hosts. Without the tree commitment, a returning user cannot reconstruct cosigner sets and node-tx templates to assemble their root-to-leaf exit path, even though vault and keys are intact — the missing piece is exit data, not keys.",
+    "mitigation": "Inline tree commitments in the event, or replicate the Blossom blob across many independent content-addressed mirrors; clients persist the full path locally at signing time; require >=k-mirror replication proof before treating a round as final; reconstruct templates deterministically from seed where possible.",
+    "residualRisk": "Any exit path depending on a fetched external commitment is strandable by taking down a small mirror set; local persistence is the only real defense."
+  },
+  {
+    "name": "Decrementing-locktime graft creates an exhaustible exit window",
+    "severity": "low",
+    "description": "The grafted decrementing absolute-locktime staleness ordering gives each successive exit/claim package an earlier locktime so the rightful owner's exit matures first. But the budget is finite: forcing rapid refresh churn (via ceremony griefing) or maximal arkoor chaining burns down the locktime headroom. As packages approach the floor, successive owners' exits crowd into a shrinking validity window or collide, and very stale-but-legitimate exits can fall outside any valid range, becoming unbroadcastable until a later height — re-introducing the very race the graft was meant to remove.",
+    "mitigation": "Size the locktime ladder with large headroom versus the maximum plausible refresh/arkoor frequency; reset the decrement budget at each on-chain checkpoint; keep arkoor hops capped (already 4) and rate-limit refreshes per epoch; surface remaining headroom in-wallet and force a checkpoint before exhaustion.",
+    "residualRisk": "High-churn vTXOs can still approach locktime exhaustion, narrowing or invalidating exit windows under sustained forced-refresh pressure."
+  },
+  {
+    "name": "vHTLC swap stalls and replacement-cycling strand bridge funds",
+    "severity": "medium",
+    "description": "LN gateway and cross-pool transfers use vHTLCs with a 144-block CLTV delta; the design admits replacement-cycling-class mempool games apply here. As counterparty (or a third party flooding the mempool), replacement-cycle the HTLC-spending tx around the timeout boundary so neither claim nor refund confirms when expected, locking both user and gateway funds for the full CLTV and beyond. For cross-pool swaps between two quorums, stalling one quorum mid-swap locks the in-flight value in the HTLC until timeout, blocking interop liveness.",
+    "mitigation": "Aggressive rebroadcast and fee-bumping of HTLC claims; shorten and randomize CLTV deltas; prefer PTLC/adaptor constructions less exposed to preimage-replacement games; gateway liquidity buffers and fail-safe-to-refund timeouts; monitor both legs across independent relays.",
+    "residualRisk": "Replacement cycling is mitigated, not eliminated; swap and cross-pool funds remain temporarily lockable for the CLTV window by a determined mempool adversary."
+  },
+  {
+    "name": "Single-aborter round-collapse griefing (free, hourly)",
+    "severity": "critical",
+    "description": "The root output spend must be signed by MuSig2-agg of ALL round participants, so the tree cannot safely finalize unless every cosigner completes. Hold several cheaply-boarded vTXOs; submit valid 24400 intents (20-bit PoW is ~1M hashes, trivial on a GPU); complete the pubnonce phase; then withhold partial sigs or send garbage. One withholder blocks the root tx for the entire <=1024-user round. Aborting forfeits nothing (forfeit only binds after the new round confirms), so the same vTXOs grief every hour for free. With ~4 intents you exhaust the <=3 re-proposal limit and kill each round, freezing all refreshes and stranding balances as uncheckpointed until forced on-chain exit.",
+    "mitigation": "Require a slashable bond posted before the nonce phase, forfeited on abort-after-nonce; finalize the participant set after nonce submission and rebuild excluding non-responders within the same attempt; raise PoW and add per-vTXO and per-key intent rate limits; reputation-gate. None fully remove the free-abort incentive without real collateral slashing.",
+    "residualRisk": "Bonds add UX friction and capital cost; adversaries split across many keys/vTXOs to stay under per-key caps; some honest aborts still disrupt rounds."
+  },
+  {
+    "name": "Operator liquidity amplification via refresh churn",
+    "severity": "high",
+    "description": "Each refresh moves a vTXO into a new round whose outputs Q funds on-chain; Q recovers the matching old-round capital only at that round's T_exp (~30 days). Repeatedly board then refresh a balance hourly: every refresh strands a fresh tranche of Q's fronted capital for 30 days, so steady-state locked float approx balance x refreshes-in-30-days (up to ~720x). Refresh fees (~0.38%/refresh) total a few hundred percent of your small balance to immobilize hundreds of times that in operator capital, leverage of order 100-250x. Run from multiple keys to drain the ~10 BTC/10k-user float, halting honest refreshes and boarding.",
+    "mitigation": "Price refresh fees on capital-lock duration, not remaining lifetime; impose per-identity refresh-rate limits and a minimum dwell time between refreshes; surcharge rapid re-refresh; cap outstanding fronted capital per key; recycle connectors to shorten locks. The carrying cost is structurally Ark's.",
+    "residualRisk": "Adversary spreads across keys/pools to evade caps; honest high-velocity users hit the same limits, degrading UX; structural capital cost remains."
+  },
+  {
+    "name": "Operator as global payment-graph surveillance point",
+    "severity": "critical",
+    "description": "Operators are a passive adversary with identities. At each arkoor cosign Q sees the spent vTXO, both new outputs, the one-time key P_B, and the amount. When the receiver later refreshes P_B, the 24400 intent carries a vTXO ownership proof Q verifies, binding P_B to the receiver's key; boarding ties keys to on-chain identity. Any single one of the five 'independent' operators thus reconstructs the entire payment graph: senders, receivers, amounts, balances, timing, chained hops. The one-time key only hides the npub from relays, never from Q. This is strictly worse than Lightning, where no single party observes the whole graph.",
+    "mitigation": "Blind the cosign so Q signs without learning amount or linkage (blind Schnorr/credential schemes), or use Chaumian-ecash-style blinded issuance for arkoor; separate refresh ownership proofs from spend identity; rotate receiver keys per payment; minimize operator-visible metadata. Hard to reconcile with Q's double-spend log.",
+    "residualRisk": "Double-spend prevention inherently needs Q to relate spends; blinding adds heavy crypto and may weaken portable fraud proofs; full graph privacy likely unattainable here."
+  },
+  {
+    "name": "Public amount-revealing payment DAG in 38403",
+    "severity": "high",
+    "description": "The 38403 cosign log is public and, per arkoor, names the spent vTXO, the resulting payment output P_B, the change output, the sequence number, and the amount. Anyone scraping relays reconstructs the complete vTXO-level payment DAG with amounts and timing. Change-detection heuristics (the output reused by the sender's next arkoor) separate payer change from payee output; chained arkoor (<=4 hops) is fully linked. Deanonymizing any single node, via a refresh, a gateway swap touching Lightning/L1, or an exit to a known address, collapses the whole connected component to real identities and exposes balances.",
+    "mitigation": "Publish only commitments/nullifiers rather than cleartext outputs and amounts; hide amounts with range proofs; avoid deterministic change linkage; shorten retention; let receivers verify via private inclusion proofs (design-C Merkle commitments) instead of a public flat log.",
+    "residualRisk": "Timing and tree-structure metadata still leak; commitments must still let Q detect double-spends; gateway and exit endpoints remain deanonymization anchors."
+  },
+  {
+    "name": "Stealth one-time key reuse (missing per-payment nonce)",
+    "severity": "medium",
+    "description": "The stealth derivation P_B = B + H(ECDH(a,B))*G has no per-payment tweak. For a fixed sender key a and receiver key B the shared secret is constant, so every payment A->B yields the identical one-time key P_B and identical leaf scriptpubkey. Repeated payments between the same pair are trivially linkable in the public 38403 log and on-chain at exit, and the address reuse degrades the receiver's privacy. An adversary suspecting a relationship confirms it by spotting the repeated P_B across log entries.",
+    "mitigation": "Include a per-output nonce in the hash: P_B = B + H(ECDH(a,B) || outpoint or counter)*G, as in BIP-47/Silent Payments, so each payment derives a fresh unlinkable key and never reuses a scriptpubkey.",
+    "residualRisk": "Receiver must scan a counter space or use Silent-Payments-style tweaks; sender bookkeeping needed; correct implementation required to avoid accidental reuse."
+  },
+  {
+    "name": "Recipient leak via NIP-65 delivery relays",
+    "severity": "high",
+    "description": "Gift wraps are delivered to 'Bob's NIP-65 read relays' resolved from his public kind-10002. The p-tag one-time key hides Bob's npub inside the event, but the delivery destination does not: any relay receiving a kind-1059 wrap knows it belongs to the owner of that read-relay set, i.e. Bob. Few or colluding relays, or an operator running relays, map wrap -> relay-set fingerprint -> npub, and correlate inbound wrap timing with Bob's subsequent online activity (a 24400 intent from the same relay set), reconstructing who-paid-whom without breaking any encryption.",
+    "mitigation": "Use large shared/anonymity-set relays not uniquely tied to one npub; deliver via mix or blinded routing or to randomized relay subsets; add padding and decoy traffic; access over Tor; decouple receive relays from the publicly advertised 10002.",
+    "residualRisk": "Anonymity set bounded by shared-relay popularity; decoys cost bandwidth; global relay observers and timing correlation still narrow the recipient."
+  },
+  {
+    "name": "Replacement-cycling / TRUC child-slot grief on exits",
+    "severity": "high",
+    "description": "Exit txs are zero-fee TRUC v3 with an anyone-can-spend P2A anchor, requiring CPFP, and TRUC permits only one unconfirmed child. Spend the anchor with a low-feerate child that also spends a watchtower/user-funded input, occupying the single child slot without confirming the parent. When the honest party RBFs your child, broadcast a conflicting tx spending the shared funded input elsewhere at higher fee, evicting their replacement (replacement cycling) and dropping the parent back to childless/zero-fee. Repeat each block near the 144-block CSV or T_exp deadline so the exit never confirms in time; the operator then sweeps.",
+    "mitigation": "Fund CPFP children only from dedicated anchor-spend UTXOs the adversary cannot conflict; exploit TRUC's bounded child size with aggressive rebroadcast and out-of-band miner submission; keep deadline buffers (the 1008-block margin); have multiple independent watchtowers race bumps.",
+    "residualRisk": "Replacement cycling is unsolved at consensus level; fee spikes plus cycling can still delay confirmation past deadlines; watchtower funding adds cost and attack surface."
+  },
+  {
+    "name": "Targeted fee-spike timing on T_exp deadlines",
+    "severity": "high",
+    "description": "Pool T_exp ladders are published in 38400 and each round's funding height is on-chain, so every pool's T_exp-720 watchtower-broadcast window is publicly computable. A well-funded adversary floods the mempool with high-fee transactions during a target pool's exit window, pushing feerates above the level at which sub-10k-sat vTXOs are economical to exit and above fixed watch-request bounties. Exits stall; at T_exp the operator legitimately sweeps the expired round, confiscating small holders. Laddering only forces the adversary to attack rungs sequentially, which a funded actor sustains across the month.",
+    "mitigation": "Use dynamic, fee-rate-indexed watch bounties and user fee reserves; lengthen pre-expiry margins; graft the recovery tapleaf so dormant funds degrade to self-custody instead of being swept; consolidate dust before expiry; randomize deadlines further.",
+    "residualRisk": "Sustained fee pressure still strands dust-sized vTXOs; recovery tapleaf depends on being grafted and on locktime maturity; users pay elevated exit fees regardless."
+  },
+  {
+    "name": "Dust vTXO flooding of leaf slots and cosign log",
+    "severity": "high",
+    "description": "Arkoor self-payments split one vTXO into payment+change for ~1-3 sats + 0.05%, both new vTXOs. Cheaply generate thousands of dust vTXOs, then submit a refresh intent per dust vTXO; each is a valid forfeitable-ownership proof that satisfies the anti-grief gate. Each round has only <=1024 leaf slots, so flooding intents starves honest refreshers of slots, while the per-vTXO 38403 sequence entries plus Q's archive bloat unboundedly, raising relay storage and client scan costs. Honest users unable to refresh drift into forced on-chain exits.",
+    "mitigation": "Enforce a minimum vTXO/leaf value (anti-dust floor); per-identity slot quotas per round; a fixed sats floor on refresh fees so dust is uneconomical; prune the log to active vTXOs; charge for log/archive retention.",
+    "residualRisk": "Adversary spreads dust across keys to evade quotas; anti-dust floors hurt legitimate micropayments; log growth still burdens relays during an attack."
+  },
+  {
+    "name": "Gift-wrap spam flood on receiver relays",
+    "severity": "medium",
+    "description": "Anyone can publish kind-1059 events to a victim's publicly known read relays. Flood those relays with millions of well-formed but bogus gift wraps p-tagged to random one-time keys. On waking, the receiver cannot distinguish real payments without NIP-44 trial-decrypting every wrap, draining battery, bandwidth, and time, and burying the genuine arkoor package. A merchant or offline user may miss a real payment's refresh deadline, pushing trusted funds toward T_exp risk. PoW and paid-write defenses are absent on the public relays the receiver must read.",
+    "mitigation": "Require PoW or paid-write on receive relays; rate-limit per relay; have the sender include a cheap pre-auth tag the receiver filters before decrypting; subscribe to curated relays; client-side dedup and prioritization.",
+    "residualRisk": "PoW raises legitimate sender cost and battery use; determined adversaries still pay PoW at scale; curated relays reduce censorship resistance and shrink the anonymity set."
+  },
+  {
+    "name": "Targeted relay-eviction to force expensive exits",
+    "severity": "high",
+    "description": "A victim's read relays are public (kind-10002) and the pool relay set is in 38400. DoS or rate-limit precisely those relays during round windows so the victim's 24400 intents and 24402/24403 signing messages arrive after the 30-second phase timers. The coordinator evicts the 'unresponsive' victim every round, so they can never checkpoint a received arkoor balance. They are forced into a unilateral on-chain exit (4.5k-22k sats) or, if offline, risk the expiry sweep. A cheap targeted Nostr-layer latency attack converts directly into the victim's on-chain cost.",
+    "mitigation": "Use many redundant, geographically diverse relays; adaptive phase timers with grace for late-but-valid messages; let users publish through fresh relays not tied to the public 10002; detect targeted relay outages and reschedule the victim into a later round.",
+    "residualRisk": "Generous timers slow rounds for everyone and widen the abort-grief window; adversaries can DoS even large relay sets for one high-value target."
+  },
+  {
+    "name": "Operator/paid-relay censorship of watch requests and alerts",
+    "severity": "high",
+    "description": "Operators run >=2 of the >=8 relays and know each victim's relay set (public 10002 + 38400). For a known-offline arkoor receiver, selectively drop that victim's 38404 watch request and any 38405 watchtower alerts on the relays they control, and pressure or DoS the rest, so no watchtower broadcasts the exit before T_exp-720. At T_exp the operators legitimately sweep the expired round, capturing funds the offline user could not defend. The thin, operator-dominated watchtower market means operator-run towers may be the only ones watching, closing the loop into theft-by-censorship within the stated trust window.",
+    "mitigation": "Mandate redundant independent watchtowers and height-deposit pre-broadcast (graft) so exits fire without live alerts; user-side multi-relay publication with delivery confirmation; recovery tapleaf so dormant funds are not swept; slashing and signed-deletion attestations for misbehaving operators.",
+    "residualRisk": "Offline users still depend on at least one honest funded watchtower receiving the request; operator tower monoculture plus relay collusion keep a censorship-to-sweep path open."
+  },
+  {
+    "name": "vHTLC gateway liquidity exhaustion (free option)",
+    "severity": "medium",
+    "description": "vHTLC LN swaps lock gateway Lightning liquidity for the 144-block CLTV delta. As initiator, open many swaps that commit the gateway's inbound/outbound HTLC capacity, then delay or never reveal the preimage (free-option / hold griefing). The gateway's capital sits frozen for the CLTV window per swap; running many concurrently exhausts its liquidity, blocking honest LN bridging and degrading the day-one interop story. Repeat across gateways. Attacker cost is minimal since aborted swaps cost only fees, not principal.",
+    "mitigation": "Charge non-refundable upfront swap reservation fees; cap concurrent in-flight value per identity; use short CLTV deltas; require hold-invoice-style penalties; demand collateral or reputation for large swaps; diversify across many gateways.",
+    "residualRisk": "Upfront fees deter casual but not well-funded attackers; short CLTVs raise honest-failure risk; a thin gateway market means few targets to saturate."
+  },
+  {
+    "name": "Wallet vault (37400) metadata leakage",
+    "severity": "medium",
+    "description": "The 37400 wallet vault is an addressable event authored by the user's main npub. Although content is NIP-44 self-encrypted, the event's author, existence, ciphertext size, and update timestamps are public. An observer watches a target npub's vault: growing size implies more vTXOs and longer arkoor history (accumulating wealth); frequent updates imply active spending or receiving. This yields a per-npub wealth-and-activity estimator without decrypting anything, tied directly to the user's identity.",
+    "mitigation": "Author the vault under a per-user derived key unlinkable to the main npub (deterministic from seed for recovery); pad ciphertext to fixed-size buckets; batch and randomize update timing; split across decoy events.",
+    "residualRisk": "Padding and decoys cost storage/bandwidth; coarse buckets still leak order-of-magnitude wealth; update cadence under load may still correlate with activity."
+  },
+  {
+    "name": "Watchtower watch-request deanonymization harvesting",
+    "severity": "high",
+    "description": "Watchtowers are permissionless and 38404 watch requests carry the exit package: the vTXO path txs (amount, tree position) and the pre-signed claim paying the user's BIP-86 L1 address, plus deadline and bounty. If public, this is open deanonymization; if 'encrypted to chosen watchtowers,' the chosen tower still learns it. Run many attractive (high-bounty, reliable) watchtowers to harvest these requests at scale, building a database mapping vTXO <-> on-chain L1 address <-> amount <-> (via the public payment graph and refresh timing) npub. This links Nostr identities to concrete Bitcoin addresses and balances.",
+    "mitigation": "Encrypt watch requests to freshly derived per-request keys; split the exit package across multiple towers so none sees the full mapping; use blinded or threshold watch schemes; do not embed the final L1 address, derive it only at claim time.",
+    "residualRisk": "Colluding towers recombine shards; the broadcasting tower necessarily learns the on-chain footprint at exit; a thin tower market concentrates harvested data."
+  }
+]
